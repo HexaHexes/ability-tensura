@@ -3,6 +3,10 @@ package org.bitwisemadness.abilitytensura.gametest;
 import com.mojang.authlib.GameProfile;
 import io.github.manasmods.manascore.skill.api.ManasSkill;
 import io.github.manasmods.manascore.skill.api.SkillAPI;
+import io.github.manasmods.tensura.storage.TensuraStorages;
+import io.github.manasmods.tensura.storage.ability.IAbility;
+import io.github.manasmods.tensura.storage.ep.IExistence;
+import io.github.manasmods.tensura.util.EnergyHelper;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.resources.ResourceLocation;
@@ -15,6 +19,8 @@ import org.bitwisemadness.abilitycore.AbilityCore;
 import org.bitwisemadness.abilitycore.api.AbilityModes;
 import org.bitwisemadness.abilitycore.api.AbilityUnlocks;
 import org.bitwisemadness.abilitycore.api.ActivationOutcome;
+import org.bitwisemadness.abilitycore.api.ActivationRequest;
+import org.bitwisemadness.abilitycore.api.ActivationSource;
 import org.bitwisemadness.abilitycore.api.AvailabilityProviders;
 import org.bitwisemadness.abilitycore.api.ChargingModel;
 import org.bitwisemadness.abilitycore.api.CooldownOwners;
@@ -177,12 +183,30 @@ public final class AbilityTensuraGameTests {
         helper.succeed();
     }
 
-    /** A bare server-side player - enough for reads; never logged in. */
+    /**
+     * A bare server-side player with a loopback connection: reads work, and
+     * setup steps that message or send (learnSkill's notification) never
+     * NPE on a null listener - outbound packets land in an embedded channel
+     * that discards them.
+     */
     private static ServerPlayer mockPlayer(GameTestHelper helper) {
         var server = helper.getLevel().getServer();
         var profile = new GameProfile(java.util.UUID.randomUUID(), "ModeIntentProbe");
-        return new ServerPlayer(server, helper.getLevel(), profile,
+        var player = new ServerPlayer(server, helper.getLevel(), profile,
                 ClientInformation.createDefault());
+        var embedded = new io.netty.channel.embedded.EmbeddedChannel();
+        embedded.pipeline().addFirst(new io.netty.channel.ChannelInboundHandlerAdapter());
+        var connection = new net.minecraft.network.Connection(
+                net.minecraft.network.protocol.PacketFlow.SERVERBOUND);
+        try {
+            connection.channelActive(embedded.pipeline().firstContext());
+        } catch (Exception ignored) {
+            // best effort: sends degrade to drops, never crash the fixture
+        }
+        player.connection = new net.minecraft.server.network.ServerGamePacketListenerImpl(
+                server, connection, player,
+                net.minecraft.server.network.CommonListenerCookie.createInitial(profile, false));
+        return player;
     }
 
     /**
@@ -238,5 +262,77 @@ public final class AbilityTensuraGameTests {
         check(cycleable > 0,
                 "upstream must offer at least one cycleable art (no vacuous pass)");
         helper.succeed();
+    }
+
+    /**
+     * The full cast chain, end to end (the #42 parity fixture): for a
+     * candidate catalog skill, give the player the native-equivalent
+     * setup - learned, slotted into the active preset at slot 0 mode 0,
+     * existence topped up - then run the WHOLE core pipeline. ACTED
+     * proves eligibility + cooldown handler + resource + activation +
+     * ARR's startHoldSkill together; every other outcome names the stage
+     * that broke (self-diagnosing: the failure message IS the locus).
+     */
+    @GameTest(template = "empty")
+    public static void castsASetUpSkillThroughTheFullChain(GameTestHelper helper) {
+        check(ModList.get().isLoaded("tensura"),
+                "Tensura must be staged for the cast-chain test");
+        ServerPlayer player = mockPlayer(helper);
+        String lastStage = "no candidate attempted";
+
+        for (ResourceLocation id : TensuraAbilityCatalog.expectedIds().stream().limit(8)
+                .toList()) {
+            ManasSkill skill = SkillAPI.getSkillRegistry().get(id);
+            if (skill == null) {
+                lastStage = "registry miss: " + id;
+                continue;
+            }
+            // Possession without the learning economy: ARR's UNLOCK_SKILL
+            // listener cancels for an unqualified mock (skill points/race),
+            // but the fixture only owes "the player HAS the skill".
+            SkillAPI.getSkillsFrom(player).updateSkill(skill.createDefaultInstance(), true);
+            var instance = SkillAPI.getSkillsFrom(player).getSkill(id).orElse(null);
+            if (instance == null) {
+                lastStage = "updateSkill did not register: " + id;
+                continue;
+            }
+            IAbility ability = TensuraStorages.getAbilityFrom(player);
+            if (ability == null) {
+                lastStage = "ability storage missing for a bare player";
+                continue;
+            }
+            ability.setAbilitySlot(ability.getActivePreset(), 0, skill, 0);
+            boolean held = false;
+            for (var slot : ability.getAbilitySlots()) {
+                if (slot.getSkill() == skill) {
+                    held = true;
+                    break;
+                }
+            }
+            if (!held) {
+                lastStage = "setAbilitySlot did not land (preset "
+                        + ability.getActivePreset() + ", id=" + id + ")";
+                continue;
+            }
+            IExistence existence = TensuraStorages.getExistenceFrom(player);
+            if (existence == null) {
+                lastStage = "existence storage missing";
+                continue;
+            }
+            existence.setMagicule(EnergyHelper.getMaxMagicule(player));
+            existence.setAura(EnergyHelper.getMaxAura(player));
+
+            var result = AbilityCore.PIPELINE.run(
+                    ActivationRequest.of(id, ActivationSource.DIRECT_SLOT), player);
+            if (result.outcome() == ActivationOutcome.ACTED) {
+                helper.succeed();
+                return;
+            }
+            lastStage = "pipeline refused " + id + ": " + result.outcome()
+                    + " (eligibility=" + AbilityUnlocks.isLearned(player, id)
+                    + ", mode=" + instance.getModes() + ")";
+        }
+        check(false, "no catalog skill cast after full native-equivalent setup; last stage: "
+                + lastStage);
     }
 }
