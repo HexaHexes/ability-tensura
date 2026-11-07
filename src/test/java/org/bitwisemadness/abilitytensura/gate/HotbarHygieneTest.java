@@ -9,6 +9,7 @@ import java.util.Optional;
 import net.minecraft.resources.ResourceLocation;
 import org.bitwisemadness.abilityhotbar.state.Bar;
 import org.bitwisemadness.abilityhotbar.state.BarState;
+import org.bitwisemadness.abilityhotbar.state.LoadoutPreset;
 import org.bitwisemadness.abilityhotbar.state.SlotAssignment;
 import org.junit.jupiter.api.Test;
 
@@ -44,7 +45,8 @@ class HotbarHygieneTest {
                     }, 0)
                 },
                 BAR_ONE,
-                3);
+                3,
+                new LoadoutPreset[0]);
     }
 
     @Test

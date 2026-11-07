@@ -1,3 +1,6 @@
 {
-  "ability_tensura.menu.field.mastery": "Mastery"
+  "ability_tensura.menu.field.mastery": "Mastery",
+  "ability_tensura.tab.skill": "Skills",
+  "ability_tensura.tab.magic": "Magic",
+  "ability_tensura.tab.battlewill": "Battlewills"
 }

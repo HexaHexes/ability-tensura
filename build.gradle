@@ -207,7 +207,7 @@ dependencies {
     // a runtime: "optional" means absent must keep working (the gametest
     // boots without hotbar as the living proof, and every callsite sits
     // behind a ModList gate - the hotbar#120 linkage lesson).
-    def abilityHotbar = 'org.bitwisemadness.abilityhotbar:ability_hotbar:1.0.0-alpha.55'
+    def abilityHotbar = 'org.bitwisemadness.abilityhotbar:ability_hotbar:1.0.0-alpha.74'
     compileOnly abilityHotbar
     testImplementation abilityHotbar
     // EventResult + Event for the ManasCore REMOVE_SKILL listener (the
@@ -225,7 +225,7 @@ test {
 // "All N required tests passed :)" when every required test succeeds. Keep
 // expectedTests in sync with the @GameTest methods in src/gametest.
 tasks.matching { it.name == 'runGameTestServer' }.configureEach {
-    def expectedTests = 6
+    def expectedTests = 7
     doLast {
         def log = file('run/logs/latest.log')
         if (!log.exists()) {

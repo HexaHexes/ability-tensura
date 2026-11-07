@@ -27,6 +27,7 @@ import org.bitwisemadness.abilitytensura.AbilityTensura;
 import org.bitwisemadness.abilitytensura.activation.TensuraActivation;
 import org.bitwisemadness.abilitytensura.catalog.BattlewillCatalog;
 import org.bitwisemadness.abilitytensura.catalog.TensuraAbilityCatalog;
+import org.bitwisemadness.abilitytensura.gate.TensuraMenuTabs;
 
 /**
  * Boot and catalog coverage for the integration layer (#58): the mod loads,
@@ -237,6 +238,32 @@ public final class AbilityTensuraGameTests {
         }
         check(cycleable > 0,
                 "upstream must offer at least one cycleable art (no vacuous pass)");
+        helper.succeed();
+    }
+
+    /**
+     * The menu-tabs soft hook (hotbar#120's linkage lesson, honored by the
+     * brief's tab declaration): this environment deliberately stages NO
+     * hotbar, so an explicit declare() must complete by gating <b>before</b>
+     * MenuTabs ever links - a broken gate order would throw
+     * NoClassDefFoundError here. The three tabs and their icons are the
+     * pack's in-game check (they need hotbar + Skill Study Books present).
+     */
+    @GameTest(template = "empty")
+    public static void menuTabsGateOnTheAbsentHotbar(GameTestHelper helper) {
+        check(ModList.get().isLoaded("tensura"),
+                "Tensura must be staged for the menu-tabs test");
+        check(!ModList.get().isLoaded("ability_hotbar"),
+                "this environment must keep proving the soft hook: no hotbar staged");
+
+        Throwable linkageFailure = null;
+        try {
+            TensuraMenuTabs.declare();
+        } catch (Throwable failure) { // NoClassDefFoundError would land here
+            linkageFailure = failure;
+        }
+        check(linkageFailure == null,
+                "the gate must return before the hotbar's MenuTabs links: " + linkageFailure);
         helper.succeed();
     }
 }

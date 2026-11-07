@@ -128,6 +128,10 @@ public final class UnlockGate {
             // never-guess read), so bugs degrade to today's listing.
             VisibilityHandlers.declare(id, UnlockGate::menuVisible);
         }
+        // Menu tabs (hotbar#154): the three category tabs with their
+        // icons - display declarations ride the same setup seam as the
+        // presentations above (gated inside, both sides).
+        TensuraMenuTabs.declare();
         // Removal half: the event is cancelable (pre-removal), so a
         // presence check would still see the skill and lie - its id is the
         // authority. Guarded callsite (hotbar#120).
