@@ -9,6 +9,7 @@ import java.util.Optional;
 import net.minecraft.resources.ResourceLocation;
 import org.bitwisemadness.abilityhotbar.state.Bar;
 import org.bitwisemadness.abilityhotbar.state.BarState;
+import org.bitwisemadness.abilityhotbar.state.LoadoutPreset;
 import org.bitwisemadness.abilityhotbar.state.SlotAssignment;
 import org.junit.jupiter.api.Test;
 
@@ -44,7 +45,15 @@ class HotbarHygieneTest {
                     }, 0)
                 },
                 BAR_ONE,
-                3);
+                3,
+                // A preset naming the unlearnt skill: hygiene clears BAR
+                // slots only - presets are snapshots and recall runs back
+                // through hotbar's validated apply seam.
+                new LoadoutPreset[] {
+                    new LoadoutPreset("snapshot", BAR_ONE, new SlotAssignment[] {
+                        new SlotAssignment(UNLEARNT)
+                    })
+                });
     }
 
     @Test
@@ -57,6 +66,9 @@ class HotbarHygieneTest {
         assertEquals(2, next.bars().length, "bar count must be preserved");
         assertEquals(BAR_ONE, next.activeBarId(), "active bar must be preserved");
         assertEquals(3, next.schemaVersion(), "schema version must not bump");
+        assertEquals(1, next.presets().length, "presets must pass through untouched");
+        assertEquals(UNLEARNT, next.presets()[0].assignments()[0].abilityId(),
+                "hygiene clears bar slots only; presets recall via the validated apply");
 
         SlotAssignment[] one = next.bars()[0].assignments();
         assertNull(one[0].abilityId(), "the unlearnt slot must be cleared");
