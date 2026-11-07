@@ -1,5 +1,6 @@
 package org.bitwisemadness.abilitytensura.gate;
 
+import com.mojang.logging.LogUtils;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.CreativeModeTab;
@@ -7,6 +8,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.fml.ModList;
 import org.bitwisemadness.abilityhotbar.registry.MenuTabs;
+import org.slf4j.Logger;
 
 /**
  * Tensura's registered menu tabs (ability-tensura#75, refined by the
@@ -27,6 +29,8 @@ import org.bitwisemadness.abilityhotbar.registry.MenuTabs;
  * never runs at all; without hotbar, this class registers nothing.</p>
  */
 public final class TensuraMenuTabs {
+
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     private static final ResourceLocation SKILLS_TAB =
             ResourceLocation.fromNamespaceAndPath("ability_tensura", "skills");
@@ -79,8 +83,11 @@ public final class TensuraMenuTabs {
             java.util.function.BiPredicate<ResourceLocation,
                     org.bitwisemadness.abilitycore.api.AbilityDefinition> accepts) {
         if (preferred != null && !preferred.isEmpty()) {
+            LOGGER.info("[tabicon] {} registered with stack icon: {}", id, preferred);
             MenuTabs.register(id, displayNameKey, preferred, accepts);
         } else {
+            LOGGER.info("[tabicon] {} registered with sprite {} (preferred stack: {})", id,
+                    fallbackSprite, preferred == null ? "null" : "empty");
             MenuTabs.register(id, displayNameKey, fallbackSprite, accepts);
         }
     }
@@ -90,11 +97,21 @@ public final class TensuraMenuTabs {
      * ruling for skills/magic. Null means the sprite fallback.
      */
     private static ItemStack borrowedTabIcon(String path) {
+        ResourceLocation tabId = ResourceLocation.fromNamespaceAndPath(
+                "tensura_skill_books", path);
         try {
-            CreativeModeTab tab = BuiltInRegistries.CREATIVE_MODE_TAB.get(
-                    ResourceLocation.fromNamespaceAndPath("tensura_skill_books", path));
-            return tab == null ? null : tab.getIconItem();
+            CreativeModeTab tab = BuiltInRegistries.CREATIVE_MODE_TAB.get(tabId);
+            if (tab == null) {
+                LOGGER.info("[tabicon] creative tab {} not in the registry at common setup",
+                        tabId);
+                return null;
+            }
+            ItemStack icon = tab.getIconItem();
+            LOGGER.info("[tabicon] creative tab {} icon stack: {}", tabId,
+                    icon.isEmpty() ? "EMPTY" : icon);
+            return icon;
         } catch (Throwable unavailable) {
+            LOGGER.info("[tabicon] creative tab {} lookup failed: {}", tabId, unavailable);
             return null; // headless fixtures run without bootstrapped registries
         }
     }
