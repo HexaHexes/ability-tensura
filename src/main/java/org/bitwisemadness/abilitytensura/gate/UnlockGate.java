@@ -24,6 +24,7 @@ import org.bitwisemadness.abilitycore.api.AvailabilityProviders;
 import org.bitwisemadness.abilitycore.api.AvailabilityState;
 import org.bitwisemadness.abilitycore.api.Metric;
 import org.bitwisemadness.abilitycore.api.VisibilityHandlers;
+import org.bitwisemadness.abilitycore.discovery.AbilityDiscovery;
 
 /**
  * The unlock gate (owner directive, 2026-11-06): <b>every ability this mod
@@ -197,21 +198,42 @@ public final class UnlockGate {
     }
 
     /**
-     * Tensura's menu visibility rule (core#124, owner's corrected rule):
-     * an art lists when the player has <b>learned</b> it, or when it is
-     * ARR-known with <b>mastery above zero</b> - a known-and-untouched
-     * art stays hidden. The eligibility refusal and the menu's grey keep
+     * Tensura's menu visibility rule (core#124, owner's corrected rule,
+     * extended by the play-test round): an art lists when the player has
+     * <b>learned</b> it, or when it is ARR-known with <b>mastery above
+     * zero</b> - a known-and-untouched art stays hidden - and a
+     * <b>resistance</b> additionally requires that trained state: only
+     * mastered or learned-with-mastery lists (the owner's resistance
+     * directive), so known-from-start and zero-mastery resistances stay
+     * hidden too. The eligibility refusal and the menu's grey keep
      * "usable only once learned" (hotbar#153's never-guess: unknown
      * never hides).
      */
     public static boolean menuVisible(Player player, ResourceLocation id) {
         if (AbilityUnlocks.isLearned(player, id).orElse(Boolean.TRUE)) {
-            return true;
+            // Owner's resistance rule: a resistance lists only once
+            // trained - instance present with mastery above zero; the
+            // unknown (no-player) context never hides
+            return player == null || !isResistance(id)
+                    || SkillAPI.getSkillsFrom(player).getSkill(id)
+                            .map(instance -> instance.getMastery() > 0)
+                            .orElse(false);
         }
         // Clause two: ARR-known with mastery > 0 - the instance's own
         // progression read (a known art with zero mastery never surfaces)
         return SkillAPI.getSkillsFrom(player).getSkill(id)
                 .map(instance -> instance.getMastery() > 0)
+                .orElse(false);
+    }
+
+    /**
+     * Whether the cataloged definition is resistance-tagged (the #88
+     * vocabulary, restored for the owner's trained-only rule): the
+     * definition is core's, this gate never reads ARR to classify.
+     */
+    private static boolean isResistance(ResourceLocation id) {
+        return AbilityDiscovery.get(id)
+                .map(definition -> definition.tags().contains("type:resistance"))
                 .orElse(false);
     }
 

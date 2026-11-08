@@ -33,6 +33,7 @@ import org.bitwisemadness.abilitytensura.AbilityTensura;
 import org.bitwisemadness.abilitytensura.activation.TensuraActivation;
 import org.bitwisemadness.abilitytensura.catalog.BattlewillCatalog;
 import org.bitwisemadness.abilitytensura.catalog.TensuraAbilityCatalog;
+import org.bitwisemadness.abilitytensura.gate.UnlockGate;
 
 /**
  * Boot and catalog coverage for the integration layer (#58): the mod loads,
@@ -334,5 +335,133 @@ public final class AbilityTensuraGameTests {
         }
         check(false, "no catalog skill cast after full native-equivalent setup; last stage: "
                 + lastStage);
+    }
+
+    /**
+     * The on-demand preset mirror (the owner's cast directive): a learned
+     * skill that was NEVER equipped into ARR's active preset still casts
+     * through the full pipeline - the service equips it into the first
+     * free preset slot on the way in, so a hotbar slot casts without
+     * ARR-side setup. The equipped assertion is the fixture's own proof
+     * that the setup was absent when the pipeline ran.
+     */
+    @GameTest(template = "empty")
+    public static void castsAnUnequippedSkillThroughTheMirror(GameTestHelper helper) {
+        check(ModList.get().isLoaded("tensura"),
+                "Tensura must be staged for the mirror cast test");
+        ServerPlayer player = mockPlayer(helper);
+        String lastStage = "no candidate attempted";
+
+        for (ResourceLocation id : TensuraAbilityCatalog.expectedIds().stream().limit(8)
+                .toList()) {
+            ManasSkill skill = SkillAPI.getSkillRegistry().get(id);
+            if (skill == null) {
+                lastStage = "registry miss: " + id;
+                continue;
+            }
+            SkillAPI.getSkillsFrom(player).updateSkill(skill.createDefaultInstance(), true);
+            if (SkillAPI.getSkillsFrom(player).getSkill(id).isEmpty()) {
+                lastStage = "updateSkill did not register: " + id;
+                continue;
+            }
+            IAbility ability = TensuraStorages.getAbilityFrom(player);
+            if (ability == null) {
+                lastStage = "ability storage missing for a bare player";
+                continue;
+            }
+            if (ability.isAbilityInActivePreset(skill)) {
+                lastStage = "fixture leak: " + id + " equipped without setup";
+                continue;
+            }
+            IExistence existence = TensuraStorages.getExistenceFrom(player);
+            if (existence == null) {
+                lastStage = "existence storage missing";
+                continue;
+            }
+            existence.setMagicule(EnergyHelper.getMaxMagicule(player));
+            existence.setAura(EnergyHelper.getMaxAura(player));
+
+            var result = AbilityCore.PIPELINE.run(
+                    ActivationRequest.of(id, ActivationSource.DIRECT_SLOT), player);
+            if (result.outcome() == ActivationOutcome.ACTED) {
+                check(ability.isAbilityInActivePreset(skill),
+                        "the mirror must have equipped " + id + " into the active preset");
+                helper.succeed();
+                return;
+            }
+            lastStage = "pipeline refused " + id + ": " + result.outcome();
+        }
+        check(false, "no catalog skill cast without preset setup; last stage: " + lastStage);
+    }
+
+    /**
+     * The owner's resistance visibility directive (play-test round): a
+     * resistance lists only once trained - ARR instance present with
+     * mastery above zero. Known-from-start (no instance) and
+     * zero-mastery instances hide, a trained instance lists, and a
+     * non-resistance keeps the unchanged learned-only rule (one category
+     * tightens, the general formula never regresses).
+     */
+    @GameTest(template = "empty")
+    public static void resistanceVisibilityRequiresTraining(GameTestHelper helper) {
+        check(ModList.get().isLoaded("tensura"),
+                "Tensura must be staged for the resistance visibility test");
+        ServerPlayer player = mockPlayer(helper);
+
+        ResourceLocation resistance = TensuraAbilityCatalog.expectedIds().stream()
+                .filter(id -> SkillAPI.getSkillRegistry().get(id) != null)
+                .filter(id -> AbilityDiscovery.get(id)
+                        .map(definition -> definition.tags().contains("type:resistance"))
+                        .orElse(false))
+                .findFirst()
+                .orElse(null);
+        check(resistance != null,
+                "the catalog must carry a resistance-tagged art (vacuous guard)");
+
+        check(!UnlockGate.menuVisible(player, resistance),
+                "a known-from-start resistance (no instance) must hide");
+
+        ManasSkill skill = SkillAPI.getSkillRegistry().get(resistance);
+        if (skill == null) {
+            throw new net.minecraft.gametest.framework.GameTestAssertException(
+                    "the resistance must resolve in ARR's registry");
+        }
+        SkillAPI.getSkillsFrom(player).updateSkill(skill.createDefaultInstance(), true);
+        var instance = SkillAPI.getSkillsFrom(player).getSkill(resistance).orElse(null);
+        if (instance == null) {
+            throw new net.minecraft.gametest.framework.GameTestAssertException(
+                    "the resistance instance must register");
+        }
+        instance.setMastery(0);
+        check(!UnlockGate.menuVisible(player, resistance),
+                "a zero-mastery resistance must hide (owner's rule)");
+
+        instance.setMastery(5);
+        check(UnlockGate.menuVisible(player, resistance),
+                "a trained resistance must list");
+
+        ResourceLocation other = TensuraAbilityCatalog.expectedIds().stream()
+                .filter(id -> SkillAPI.getSkillRegistry().get(id) != null)
+                .filter(id -> !AbilityDiscovery.get(id)
+                        .map(definition -> definition.tags().contains("type:resistance"))
+                        .orElse(false))
+                .findFirst()
+                .orElse(null);
+        check(other != null, "the catalog must carry a non-resistance art (vacuous guard)");
+        ManasSkill otherSkill = SkillAPI.getSkillRegistry().get(other);
+        if (otherSkill == null) {
+            throw new net.minecraft.gametest.framework.GameTestAssertException(
+                    "the non-resistance must resolve in ARR's registry");
+        }
+        SkillAPI.getSkillsFrom(player).updateSkill(otherSkill.createDefaultInstance(), true);
+        var otherInstance = SkillAPI.getSkillsFrom(player).getSkill(other).orElse(null);
+        if (otherInstance == null) {
+            throw new net.minecraft.gametest.framework.GameTestAssertException(
+                    "the non-resistance instance must register");
+        }
+        otherInstance.setMastery(0);
+        check(UnlockGate.menuVisible(player, other),
+                "a learned non-resistance lists at zero mastery (unchanged rule)");
+        helper.succeed();
     }
 }
