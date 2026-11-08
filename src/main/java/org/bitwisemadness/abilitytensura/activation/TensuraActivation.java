@@ -141,7 +141,10 @@ public final class TensuraActivation {
             } else {
                 instance.onToggleOff(player);
             }
-            instance.markDirty();
+            // The client never re-reads a mutated instance on its own: the
+            // storage idiom pushes the instance's dirty flag into the
+            // storage so the framework's flush reaches the pane's state.
+            SkillAPI.getSkillsFrom(player).checkAndMarkDirty(instance);
             return ActivationResult.ACTED;
         }
 
