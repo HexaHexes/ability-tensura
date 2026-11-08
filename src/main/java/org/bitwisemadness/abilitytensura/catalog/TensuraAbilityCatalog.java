@@ -92,6 +92,13 @@ public final class TensuraAbilityCatalog {
 
     /** The id namespace every category entry lives in. */
     private static final String ID_NAMESPACE = "tensura";
+    /** The built-in Tensura Skill Wiki's mod id (owner's brief). */
+    private static final String WIKI_MOD_ID = "foxablazeaqzl_wiki";
+    /** Its description-key prefix: {@code <prefix><ns>.<path>.description}. */
+    private static final String WIKI_KEY_PREFIX = "foxablazeaqzl_wiki.wiki.skill.";
+    /** Lazy one-shot read of the wiki's description keys (absent = empty). */
+    private static boolean wikiKeysRead;
+    private static Set<String> wikiDescriptionKeys = Set.of();
 
     private TensuraAbilityCatalog() {
     }
@@ -145,6 +152,59 @@ public final class TensuraAbilityCatalog {
         return (ModFile) info.getFile();
     }
 
+    /** The wiki mod's file, or null when it is not installed. */
+    private static ModFile wikiModFile() {
+        var info = ModList.get().getModFileById(WIKI_MOD_ID);
+        return info == null ? null : (ModFile) info.getFile();
+    }
+
+    /**
+     * The description key for one id: the wiki mod's own key when the mod
+     * is present AND covers this id (owner's brief - its descriptions win
+     * over ARR's), else ARR's {@code tensura.skill.<path>.description} -
+     * an id the wiki skips keeps ARR's prose instead of losing its line.
+     * The wiki read is one-shot and soft: a missing or malformed lang file
+     * degrades to ARR-only (the wiki is enrichment, never a registration
+     * input, so it can never fail a catalog).
+     */
+    static String descriptionKey(ResourceLocation id) {
+        String arrKey = "tensura.skill." + id.getPath() + ".description";
+        if (!wikiKeysRead) {
+            wikiKeysRead = true;
+            wikiDescriptionKeys = readWikiDescriptionKeys();
+        }
+        String wikiKey = WIKI_KEY_PREFIX + id.getNamespace() + "."
+                + id.getPath() + ".description";
+        return wikiDescriptionKeys.contains(wikiKey) ? wikiKey : arrKey;
+    }
+
+    /** The wiki's {@code .description} keys, or empty when absent/unreadable. */
+    private static Set<String> readWikiDescriptionKeys() {
+        try {
+            ModFile wiki = wikiModFile();
+            if (wiki == null) {
+                return Set.of();
+            }
+            Path lang = wiki.findResource("assets", WIKI_MOD_ID, "lang", "en_us.json");
+            if (lang == null || !Files.exists(lang)) {
+                return Set.of();
+            }
+            try (InputStream in = Files.newInputStream(lang)) {
+                JsonObject root = JsonParser.parseReader(
+                        new InputStreamReader(in, StandardCharsets.UTF_8)).getAsJsonObject();
+                Set<String> keys = new LinkedHashSet<>();
+                for (String key : root.keySet()) {
+                    if (key.startsWith(WIKI_KEY_PREFIX) && key.endsWith(".description")) {
+                        keys.add(key);
+                    }
+                }
+                return keys;
+            }
+        } catch (IOException | RuntimeException malformed) {
+            return Set.of(); // optional enrichment: never fails registration
+        }
+    }
+
     /** Parses one flat ARR category tag (values array of direct ids). */
     private static List<String> readTag(ModFile tensura, Category category) {
         Path path = tensura.findResource("data", "tensura", "tags",
@@ -192,8 +252,10 @@ public final class TensuraAbilityCatalog {
                 ConsumptionStrategies.ALL,
                 AmountResolvers.STATIC,
                 Set.of(category.system(), category.typeTag()),
-                // ARR ships prose under <displayNameKey>.description (355/355
-                // verified); the menu resolves the key in its language files
-                Map.of("description", name + ".description"));
+                // The wiki mod's prose wins per-id when it covers the
+                // ability (owner's brief); ARR's own key is the fallback
+                // - the menu resolves either key through its language files
+                Map.of("description", descriptionKey(
+                        ResourceLocation.fromNamespaceAndPath(ID_NAMESPACE, artPath))));
     }
 }
