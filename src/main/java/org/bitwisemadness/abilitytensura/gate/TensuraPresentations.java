@@ -32,6 +32,8 @@ public final class TensuraPresentations {
 
     /** The provider's field label (our modid namespace, shipped in our lang). */
     public static final String MASTERY_LABEL = "ability_tensura.menu.field.mastery";
+    /** The status label: Known / Learned / Mastered (owner's brief). */
+    public static final String STATUS_LABEL = "ability_tensura.menu.field.status";
 
     private TensuraPresentations() {
     }
@@ -56,9 +58,27 @@ public final class TensuraPresentations {
         ManasSkillInstance instance =
                 SkillAPI.getSkillsFrom(player).getSkill(abilityId).orElse(null);
         if (instance == null) {
-            return base(); // unlearned (the menu filters it) or not one of ours
+            // Unlearned but ours (the owner's known-from-start rule lists
+            // e.g. every resistance from ARR's start): present Known.
+            return new AbilityPresentation(null,
+                    List.of(PresentationField.text(STATUS_LABEL, "Known")));
         }
-        return new AbilityPresentation(toggleFor(player, instance), masteryFields(instance));
+        return new AbilityPresentation(toggleFor(player, instance),
+                statusAndMastery(instance));
+    }
+
+    /**
+     * Status first - Known/Learned/Mastered is ARR's own distinction
+     * (owner's brief) - then mastery when ARR exposes a usable maximum.
+     * Values follow masteryText's precedent: raw display strings, never
+     * guessed (the fraction helper abstains the same way).
+     */
+    static List<PresentationField> statusAndMastery(ManasSkillInstance instance) {
+        float fraction = masteryFraction(instance.getMastery(), instance.getMaxMastery());
+        PresentationField status = PresentationField.text(STATUS_LABEL,
+                fraction >= 1f ? "Mastered" : "Learned");
+        List<PresentationField> mastery = masteryFields(instance);
+        return mastery.isEmpty() ? List.of(status) : List.of(status, mastery.get(0));
     }
 
     /** The toggle half: null when the skill cannot be toggled (never "off"). */
