@@ -14,15 +14,15 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import net.minecraft.core.Registry;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.fml.ModList;
 import net.neoforged.fml.loading.moddiscovery.ModFile;
-import net.neoforged.neoforge.registries.RegisterEvent;
 import org.bitwisemadness.abilitycore.api.AbilityDefinition;
 import org.bitwisemadness.abilitycore.api.ActivationType;
 import org.bitwisemadness.abilitycore.api.AmountResolvers;
 import org.bitwisemadness.abilitycore.api.ConsumptionStrategies;
-import org.bitwisemadness.abilitycore.registry.AbilityRegistries;
+import org.bitwisemadness.abilitytensura.activation.TensuraActivation;
 import org.bitwisemadness.abilitytensura.gate.UnlockGate;
 
 /**
@@ -45,10 +45,11 @@ import org.bitwisemadness.abilitytensura.gate.UnlockGate;
  * shape, same reasons): native ids ({@code tensura:<id>}), ARR's own names
  * ({@code tensura.skill.<id>}) and icons ({@code textures/skill/<type>/},
  * {@code textures/magic/<group>/} - all 332 verified present in the shipped
- * jar), {@link ActivationType#CHANNELLED} for the single native hold entry
- * ({@code startHoldSkill}) - a per-ART mapping stays #42's slice with #52's
- * evidence - empty costs (ARR charges its own currencies,
- * ADR-002 NATIVE). The category tag ({@code tensura:skill} /
+ * jar), the per-art {@link ActivationType} mapped from ARR's bytecode in
+ * {@link TensuraActivation#shapeOf} (magic cast-bar = CHARGED, ticking
+ * skills = CHANNELLED, hold-release battlewills = CHARGED, the rest
+ * INSTANT), and declared usage costs as display metadata - charging
+ * stays ARR's own (ADR-002 NATIVE). The category tag ({@code tensura:skill} /
  * {@code tensura:magic}) plus {@code type:<name>} tags give consumers both
  * the coarse group and the exact ARR category.</p>
  *
@@ -108,12 +109,13 @@ public final class TensuraAbilityCatalog {
     }
 
     /**
-     * Registers the catalog on core's abilities registry - called from the
-     * mod-bus {@code RegisterEvent} beside {@link BattlewillCatalog}. Fails
-     * loudly on a malformed ARR tag (an unexpected namespace or a nested
-     * reference is a broken input, not something to skip silently).
+     * Registers the catalog on core's abilities registry - called from
+     * ARR's skill-registry event beside {@link BattlewillCatalog} (the
+     * timing and raw-write rationale lives on {@code AbilityTensuraEvents}).
+     * Fails loudly on a malformed ARR tag (an unexpected namespace or a
+     * nested reference is a broken input, not something to skip silently).
      */
-    public static void register(RegisterEvent event) {
+    public static void register(Registry<AbilityDefinition> registry) {
         ModFile tensura = tensuraModFile();
         if (tensura == null) {
             return; // Tensura absent: nothing to catalog (the pairs' gate pattern)
@@ -122,8 +124,8 @@ public final class TensuraAbilityCatalog {
             for (String artPath : readTag(tensura, category)) {
                 ResourceLocation id = ResourceLocation.fromNamespaceAndPath(ID_NAMESPACE, artPath);
                 UnlockGate.track(id);
-                event.register(AbilityRegistries.ABILITY_REGISTRY_KEY, id,
-                        () -> definitionFor(artPath, category));
+                // eager build: the shapes read the LIVE skill registry now
+                Registry.register(registry, id, definitionFor(artPath, category));
             }
         }
     }
@@ -271,22 +273,24 @@ public final class TensuraAbilityCatalog {
     /** One catalog entry: ARR's name and icon, the system's category. */
     static AbilityDefinition definitionFor(String artPath, Category category) {
         String name = BattlewillCatalog.NAME_PREFIX + artPath;
+        ResourceLocation id = ResourceLocation.fromNamespaceAndPath(ID_NAMESPACE, artPath);
+        // Owner's bytecode brief: the per-art activation shape and the
+        // declared usage costs (display metadata, charging stays NATIVE);
+        // the upstream read is guarded inside and probe-pinned by a test
+        TensuraActivation.ArtShape shape = TensuraActivation.shapeOf(id);
         return new AbilityDefinition(
                 name,
                 ResourceLocation.fromNamespaceAndPath(ID_NAMESPACE,
                         category.iconPath(artPath)),
                 category.category(),
-                // ARR's one pipeline entry is the native hold - channelled
-                // (a per-ART mapping stays #42's slice, with #52's evidence)
-                ActivationType.CHANNELLED,
-                List.of(),
+                shape.activation(),
+                shape.costs(),
                 ConsumptionStrategies.ALL,
                 AmountResolvers.STATIC,
                 Set.of(category.system(), category.typeTag()),
                 // Owner's precedence: foxablaze mod key, shipped wiki.gg
                 // prose, ARR's key - the menu renders keys translated and
                 // prose literally, so both forms ride this one slot
-                Map.of("description", descriptionValue(
-                        ResourceLocation.fromNamespaceAndPath(ID_NAMESPACE, artPath))));
+                Map.of("description", descriptionValue(id)));
     }
 }

@@ -129,31 +129,51 @@ public final class AbilityTensuraGameTests {
     }
 
     /**
-     * The cost-deferral gate (the native-economy rule): every catalog art
-     * carries <b>empty costs</b> and a <b>NATIVE</b> charging model -
-     * Tensura: Reincarnated prices, charges and regenerates aura and
-     * magicule itself, so core must never price, affordability-gate, or
-     * charge these ids. A cost or an EXTERNAL model creeping into the
-     * catalog fails the run (the #12 "no pre-charge" code gate, now
-     * covering all 355 arts).
+     * Costs are display metadata while charging stays NATIVE
+     * ({@code ResourceCost}'s own contract: the descriptor says what a
+     * cast costs, the provider's chargingModel is the only charge site) -
+     * and every cost the catalog declares is an honest, positive amount
+     * of a currency ARR itself quotes (magicule or aura).
      */
     @GameTest(template = "empty")
-    public static void catalogDefersCostsToTensura(GameTestHelper helper) {
+    public static void catalogDeclaresDisplayCostsAndNativeCharging(GameTestHelper helper) {
         check(ModList.get().isLoaded("tensura"),
-                "Tensura must be staged for the cost-deferral test");
+                "Tensura must be staged for the display-cost test");
         var expected = new java.util.HashSet<>(TensuraAbilityCatalog.expectedIds());
         for (String path : BattlewillCatalog.paths()) {
             expected.add(BattlewillCatalog.idFor(path));
         }
         for (ResourceLocation id : expected) {
             var definition = AbilityDiscovery.get(id).orElseThrow();
-            check(definition.costs().isEmpty(),
-                    "costs must defer to Tensura: Reincarnated for: " + id);
+            for (org.bitwisemadness.abilitycore.api.ResourceCost cost : definition.costs()) {
+                check(Double.isFinite(cost.amount()) && cost.amount() >= 0,
+                        "a declared cost must be a finite non-negative amount: " + id);
+                check(cost.resourceId().equals("tensura:magicule")
+                                || cost.resourceId().equals("tensura:aura"),
+                        "declared costs must name ARR's own currencies: " + id);
+            }
             check(AbilityCore.HANDLERS.get(id).isPresent(),
                     "the activation handler must exist for: " + id);
             check(AbilityCore.HANDLERS.modelOf(id) == ChargingModel.NATIVE,
                     "core must never charge a native art (NATIVE model): " + id);
         }
+        helper.succeed();
+    }
+
+    /**
+     * The registration-time timing probe (owner's bytecode brief): the
+     * definitions were built while ARR's skill registry was POPULATED -
+     * resolved shapes map real activation types and costs instead of
+     * degrading to the INSTANT/empty fallback the absent case produces.
+     */
+    @GameTest(template = "empty")
+    public static void registrationSeesTheSkillRegistry(GameTestHelper helper) {
+        check(ModList.get().isLoaded("tensura"),
+                "Tensura must be staged for the registration-timing test");
+        int resolved = TensuraActivation.skillsResolvedAtRegistration();
+        check(resolved > 0,
+                "definitions must resolve ARR skills at RegisterEvent (resolved="
+                        + resolved + " of " + TensuraAbilityCatalog.expectedIds().size() + ")");
         helper.succeed();
     }
 
