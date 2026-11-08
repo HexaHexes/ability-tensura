@@ -62,7 +62,8 @@ final class HotbarHygiene {
             next[i] = new Bar(bar.id(), copy, bar.selectedSlot());
         }
         return changed
-                ? Optional.of(new BarState(next, state.activeBarId(), state.schemaVersion()))
+                ? Optional.of(new BarState(next, state.activeBarId(), state.schemaVersion(),
+                        state.presets()))
                 : Optional.empty();
     }
 

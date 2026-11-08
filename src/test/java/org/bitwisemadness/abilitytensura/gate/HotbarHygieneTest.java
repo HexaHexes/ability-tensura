@@ -44,7 +44,8 @@ class HotbarHygieneTest {
                     }, 0)
                 },
                 BAR_ONE,
-                3);
+                3,
+                new org.bitwisemadness.abilityhotbar.state.LoadoutPreset[0]);
     }
 
     @Test

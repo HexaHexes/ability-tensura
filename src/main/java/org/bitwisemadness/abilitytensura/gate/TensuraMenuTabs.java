@@ -11,12 +11,14 @@ import org.bitwisemadness.abilityhotbar.registry.MenuTabs;
 /**
  * Tensura's registered menu tabs (ability-tensura#75, refined by the
  * owner's icon brief): **Skills, Magic and Battlewill** as three tabs in
- * the hotbar's menu, each carrying the brief's icon - battlewills the
+ * the hotbar's menu, each carrying **both identifier forms** (hotbar#171):
+ * the brief's preferred item as the draw preference - battlewills the
  * {@code tensura:battlewill_manual} item, skills/magic the icons of Skill
  * Study Books' own creative tabs ({@code tensura_skill_books:ultimate} =
- * "Ultimate Skills", {@code :magic_spiritual} = "Spiritual Magic") - with
- * ARR's tab sprite as the fallback whenever an item cannot be resolved
- * (mod absent, registries headless). Membership over the definition's
+ * "Ultimate Skills", {@code :magic_spiritual} = "Spiritual Magic") - and
+ * ARR's tab sprite as the fallback for whenever the item's model renders
+ * nothing in a GUI or the item cannot be resolved (mod absent, registries
+ * headless). Membership over the definition's
  * category (pure predicates, no upstream reads at query time).
  *
  * <p>Guarded callsite: hotbar is an <b>optional</b> dependency of this
@@ -69,20 +71,21 @@ public final class TensuraMenuTabs {
     }
 
     /**
-     * Registers one tab with the brief's preferred item icon, falling back
-     * to ARR's own tab sprite whenever the stack cannot be resolved -
-     * skill-books' tab not registered, registries not bootstrapped
-     * (headless fixtures), or a lookup failure. Degrades, never throws.
+     * Registers one tab with **both identifier forms** (hotbar#171's
+     * contract): the brief's preferred item as the draw preference and
+     * ARR's own tab sprite as the fallback - hotbar decides at draw time
+     * (its {@code stackRendersInGui} probe), because renderability needs
+     * the baked model manager that does not exist here: skill books'
+     * study book resolves but its model emits no quads in any GUI. Null
+     * or empty preferred stack (headless fixtures, registry lookups that
+     * find nothing) degrades to the sprite-only form. Degrades, never throws.
      */
     private static void registerTab(ResourceLocation id, String displayNameKey,
             ResourceLocation fallbackSprite, ItemStack preferred,
             java.util.function.BiPredicate<ResourceLocation,
                     org.bitwisemadness.abilitycore.api.AbilityDefinition> accepts) {
-        if (preferred != null && !preferred.isEmpty()) {
-            MenuTabs.register(id, displayNameKey, preferred, accepts);
-        } else {
-            MenuTabs.register(id, displayNameKey, fallbackSprite, accepts);
-        }
+        ItemStack drawable = preferred == null || preferred.isEmpty() ? null : preferred;
+        MenuTabs.register(id, displayNameKey, fallbackSprite, drawable, accepts);
     }
 
     /**

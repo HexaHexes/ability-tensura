@@ -32,12 +32,16 @@ where custom behaviour demands it.
 - Optional: `ability_hotbar`, `tensura-better-spellcasting-bridge`,
   `better_spellcasting`, `irons_spellbooks` - never hard dependencies; all
   integration through soft hooks.
-- **Menu tabs** (issue #75, owner's icon brief): `TensuraMenuTabs` registers
-  Skills, Magic and Battlewill with hotbar's `MenuTabs` (icon = the brief's
-  items: ARR's `tensura:battlewill_manual` for Battlewill, Skill Study Books'
-  creative-tab icons for Skills/Magic - registry lookups, never copied - with
-  ARR's own `*_tab_icon.png` sprite as the always-safe fallback when the item
-  cannot be resolved; membership = the definition's category).
+- **Menu tabs** (issue #75, owner's icon brief, hotbar#171's both-forms
+  contract): `TensuraMenuTabs` registers Skills, Magic and Battlewill with
+  hotbar's `MenuTabs` carrying **both identifier forms** - the draw
+  preference (ARR's `tensura:battlewill_manual` for Battlewill, Skill Study
+  Books' creative-tab icons for Skills/Magic - registry lookups, never
+  copied) **and** ARR's own `*_tab_icon.png` sprite as the fallback. Which
+  one draws is hotbar's call at draw time (`stackRendersInGui`): the item
+  when its model produces pixels, else the sprite, else text only - the
+  study book resolves but its model emits no quads in any GUI. Membership =
+  the definition's category.
   It follows the `HotbarHygiene` guard pattern: the checked entry may touch
   hotbar classes, the unchecked half (`registerAll`) is the only link site -
   tests call it directly. Hooked at the end of `UnlockGate.register()`.
