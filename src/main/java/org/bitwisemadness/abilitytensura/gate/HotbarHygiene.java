@@ -37,7 +37,8 @@ final class HotbarHygiene {
     /**
      * Clears every non-null slot whose ability matches the predicate, bar
      * by bar; ids and shapes are otherwise preserved (bar ids, selection,
-     * schema version - no ladder bump: this writes existing shapes only).
+     * schema version, loadout presets - no ladder bump: this writes
+     * existing shapes only).
      *
      * @param state     the player's current bar state
      * @param clearSlot which abilities lose their assignment
@@ -62,7 +63,8 @@ final class HotbarHygiene {
             next[i] = new Bar(bar.id(), copy, bar.selectedSlot());
         }
         return changed
-                ? Optional.of(new BarState(next, state.activeBarId(), state.schemaVersion()))
+                ? Optional.of(new BarState(next, state.activeBarId(), state.schemaVersion(),
+                        state.presets()))
                 : Optional.empty();
     }
 

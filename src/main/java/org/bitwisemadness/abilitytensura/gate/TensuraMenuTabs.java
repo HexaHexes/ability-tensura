@@ -15,9 +15,12 @@ import org.bitwisemadness.abilityhotbar.registry.MenuTabs;
  * {@code tensura:battlewill_manual} item, skills/magic the icons of Skill
  * Study Books' own creative tabs ({@code tensura_skill_books:ultimate} =
  * "Ultimate Skills", {@code :magic_spiritual} = "Spiritual Magic") - with
- * ARR's tab sprite as the fallback whenever an item cannot be resolved
- * (mod absent, registries headless). Membership over the definition's
- * category (pure predicates, no upstream reads at query time).
+ * ARR's tab sprite registered alongside as the fallback whenever the item
+ * cannot be resolved (mod absent, registries headless) <b>or renders
+ * nothing</b> (skill-books' study-book model empties every vanilla GUI
+ * context, so the menu draws its sprite instead of a blank tab).
+ * Membership over the definition's category (pure predicates, no upstream
+ * reads at query time).
  *
  * <p>Guarded callsite: hotbar is an <b>optional</b> dependency of this
  * mod, so {@link #register} checks both mods and {@link #registerAll}
@@ -69,17 +72,19 @@ public final class TensuraMenuTabs {
     }
 
     /**
-     * Registers one tab with the brief's preferred item icon, falling back
-     * to ARR's own tab sprite whenever the stack cannot be resolved -
-     * skill-books' tab not registered, registries not bootstrapped
-     * (headless fixtures), or a lookup failure. Degrades, never throws.
+     * Registers one tab with the brief's preferred item icon <b>and</b>
+     * ARR's own tab sprite as its fallback: the menu draws the stack when
+     * it renders in a GUI and the sprite when it does not (or when the
+     * stack could not be resolved at all - skill-books' tab not
+     * registered, registries not bootstrapped headless, lookup failure).
+     * Degrades, never throws.
      */
     private static void registerTab(ResourceLocation id, String displayNameKey,
             ResourceLocation fallbackSprite, ItemStack preferred,
             java.util.function.BiPredicate<ResourceLocation,
                     org.bitwisemadness.abilitycore.api.AbilityDefinition> accepts) {
         if (preferred != null && !preferred.isEmpty()) {
-            MenuTabs.register(id, displayNameKey, preferred, accepts);
+            MenuTabs.register(id, displayNameKey, fallbackSprite, preferred, accepts);
         } else {
             MenuTabs.register(id, displayNameKey, fallbackSprite, accepts);
         }
@@ -87,7 +92,7 @@ public final class TensuraMenuTabs {
 
     /**
      * Skill Study Books' creative-tab icon - the brief's "same icon as"
-     * ruling for skills/magic. Null means the sprite fallback.
+     * ruling for skills/magic. Null means the sprite-only registration.
      */
     private static ItemStack borrowedTabIcon(String path) {
         try {
