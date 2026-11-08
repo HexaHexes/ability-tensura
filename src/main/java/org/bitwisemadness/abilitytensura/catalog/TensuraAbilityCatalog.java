@@ -99,6 +99,10 @@ public final class TensuraAbilityCatalog {
     /** Lazy one-shot read of the wiki's description keys (absent = empty). */
     private static boolean wikiKeysRead;
     private static Set<String> wikiDescriptionKeys = Set.of();
+    /** The shipped wiki.gg prose, keyed by full id (owner's middle layer). */
+    private static final String SHIPPED_WIKI_RESOURCE =
+            "/assets/ability_tensura/wiki_descriptions.json";
+    private static Map<String, String> shippedWiki = Map.of();
 
     private TensuraAbilityCatalog() {
     }
@@ -159,23 +163,50 @@ public final class TensuraAbilityCatalog {
     }
 
     /**
-     * The description key for one id: the wiki mod's own key when the mod
-     * is present AND covers this id (owner's brief - its descriptions win
-     * over ARR's), else ARR's {@code tensura.skill.<path>.description} -
-     * an id the wiki skips keeps ARR's prose instead of losing its line.
-     * The wiki read is one-shot and soft: a missing or malformed lang file
-     * degrades to ARR-only (the wiki is enrichment, never a registration
-     * input, so it can never fail a catalog).
+     * The description slot's value for one id, in the owner's precedence:
+     * <b>foxablaze wiki mod</b> key when it covers the id, else our
+     * <b>shipped wiki.gg prose</b> (curated from tensura.wiki.gg for the
+     * ids the mod does not carry - magic and battlewills), else ARR's
+     * {@code tensura.skill.<path>.description}. The menu resolves keys
+     * through language files and draws prose literally - both forms ride
+     * the same slot. Reads are one-shot and soft: a missing or malformed
+     * layer degrades to the next (enrichment can never fail a catalog).
      */
-    static String descriptionKey(ResourceLocation id) {
-        String arrKey = "tensura.skill." + id.getPath() + ".description";
+    static String descriptionValue(ResourceLocation id) {
         if (!wikiKeysRead) {
             wikiKeysRead = true;
             wikiDescriptionKeys = readWikiDescriptionKeys();
+            shippedWiki = readShippedWiki();
         }
-        String wikiKey = WIKI_KEY_PREFIX + id.getNamespace() + "."
+        String modKey = WIKI_KEY_PREFIX + id.getNamespace() + "."
                 + id.getPath() + ".description";
-        return wikiDescriptionKeys.contains(wikiKey) ? wikiKey : arrKey;
+        if (wikiDescriptionKeys.contains(modKey)) {
+            return modKey;
+        }
+        String prose = shippedWiki.get(id.toString());
+        if (prose != null && !prose.isBlank()) {
+            return prose;
+        }
+        return "tensura.skill." + id.getPath() + ".description";
+    }
+
+    /** The shipped wiki.gg prose, or empty when the resource is absent. */
+    private static Map<String, String> readShippedWiki() {
+        try (InputStream in = TensuraAbilityCatalog.class
+                .getResourceAsStream(SHIPPED_WIKI_RESOURCE)) {
+            if (in == null) {
+                return Map.of();
+            }
+            JsonObject root = JsonParser.parseReader(
+                    new InputStreamReader(in, StandardCharsets.UTF_8)).getAsJsonObject();
+            Map<String, String> out = new java.util.HashMap<>();
+            for (String key : root.keySet()) {
+                out.put(key, root.get(key).getAsString());
+            }
+            return out;
+        } catch (IOException | RuntimeException malformed) {
+            return Map.of(); // optional enrichment: never fails registration
+        }
     }
 
     /** The wiki's {@code .description} keys, or empty when absent/unreadable. */
@@ -252,10 +283,10 @@ public final class TensuraAbilityCatalog {
                 ConsumptionStrategies.ALL,
                 AmountResolvers.STATIC,
                 Set.of(category.system(), category.typeTag()),
-                // The wiki mod's prose wins per-id when it covers the
-                // ability (owner's brief); ARR's own key is the fallback
-                // - the menu resolves either key through its language files
-                Map.of("description", descriptionKey(
+                // Owner's precedence: foxablaze mod key, shipped wiki.gg
+                // prose, ARR's key - the menu renders keys translated and
+                // prose literally, so both forms ride this one slot
+                Map.of("description", descriptionValue(
                         ResourceLocation.fromNamespaceAndPath(ID_NAMESPACE, artPath))));
     }
 }

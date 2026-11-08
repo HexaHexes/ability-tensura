@@ -114,10 +114,9 @@ public final class BattlewillCatalog {
                 ConsumptionStrategies.ALL,
                 AmountResolvers.STATIC,
                 Set.of(CATEGORY_TAG),
-                // The wiki mod's prose wins per-id when it covers this art
-                // (owner's brief); ARR's own key is the fallback - the menu
-                // resolves either key through its language files
+                // Owner's precedence: foxablaze mod key, shipped wiki.gg
+                // prose, ARR's key - keys render translated, prose literally
                 Map.of("description",
-                        TensuraAbilityCatalog.descriptionKey(idFor(path))));
+                        TensuraAbilityCatalog.descriptionValue(idFor(path))));
     }
 }
