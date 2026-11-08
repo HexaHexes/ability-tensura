@@ -282,6 +282,38 @@ public final class AbilityTensuraGameTests {
                 && before.getMode() == after.getMode();
     }
 
+    /**
+     * Battlewills' real subcategories (owner: they were both a category
+     * and a subcategory): every art carries ONE {@code type:} tag from
+     * ARR's own structure - never the bare category name - and the three
+     * groups partition the inventory exactly (non-vacuous split).
+     */
+    @GameTest(template = "empty")
+    public static void battlewillsSubdivideIntoRealCategories(GameTestHelper helper) {
+        long melee = 0;
+        long projectile = 0;
+        for (String path : BattlewillCatalog.paths()) {
+            String tag = BattlewillCatalog.subcategoryTag(path);
+            var definition = AbilityDiscovery.get(BattlewillCatalog.idFor(path))
+                    .orElse(null);
+            check(definition != null,
+                    "battlewill definition must register: " + path);
+            check(definition.tags().contains(tag),
+                    "the art carries its group tag " + tag + ": " + path);
+            check(definition.tags().stream().noneMatch(t -> t.equals("battlewill")),
+                    "no bare category duplication: " + path);
+            if (tag.equals("type:melee")) {
+                melee++;
+            } else if (tag.equals("type:projectile")) {
+                projectile++;
+            }
+        }
+        check(melee == 8 && projectile == 7,
+                "ARR's split must hold (melee=" + melee
+                        + ", projectile=" + projectile + ")");
+        helper.succeed();
+    }
+
     private static void check(boolean condition, String message) {
         if (!condition) {
             throw new net.minecraft.gametest.framework.GameTestAssertException(message);
