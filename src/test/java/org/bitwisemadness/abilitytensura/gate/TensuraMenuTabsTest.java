@@ -2,6 +2,7 @@ package org.bitwisemadness.abilitytensura.gate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -66,6 +67,9 @@ class TensuraMenuTabsTest {
                 "textures/gui/skill/skill_tab_icon"), skills.iconId(),
                 "ARR's own tab icon, referenced by location (ADR-005)");
         assertTrue(skills.hasIcon());
+        assertNull(skills.icon(),
+                "headless: the borrowed creative tab is unresolvable - both-forms "
+                        + "registration degrades to the sprite (hotbar#171)");
         assertTrue(skills.accepts().test(
                 ResourceLocation.fromNamespaceAndPath("tensura", "fireball"),
                 inCategory("skill")), "a skill is a skill");
