@@ -114,8 +114,10 @@ public final class BattlewillCatalog {
                 ConsumptionStrategies.ALL,
                 AmountResolvers.STATIC,
                 Set.of(CATEGORY_TAG),
-                // ARR ships prose under <displayNameKey>.description; the
-                // menu resolves the key through its language files
-                Map.of("description", name + ".description"));
+                // The wiki mod's prose wins per-id when it covers this art
+                // (owner's brief); ARR's own key is the fallback - the menu
+                // resolves either key through its language files
+                Map.of("description",
+                        TensuraAbilityCatalog.descriptionKey(idFor(path))));
     }
 }
