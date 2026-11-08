@@ -71,4 +71,10 @@ class TensuraPresentationsTest {
         assertEquals("ability_tensura.menu.field.mastery", TensuraPresentations.MASTERY_LABEL,
                 "provider-owned key under our modid - never ARR's key space");
     }
+
+    @Test
+    void theStatusLabelIsOurOwnNamespace() {
+        assertEquals("ability_tensura.menu.field.status", TensuraPresentations.STATUS_LABEL,
+                "Known/Learned/Mastered reads under our modid - owner's brief");
+    }
 }
