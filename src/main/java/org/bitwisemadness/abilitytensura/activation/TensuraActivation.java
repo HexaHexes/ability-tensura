@@ -14,6 +14,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.fml.ModList;
@@ -52,9 +54,14 @@ import org.slf4j.Logger;
  *       ({@code AbilityHandler}) <b>interrupts unless the ability sits in
  *       the active preset at that keyNumber with that mode</b>
  *       ({@code isAbilityInActivePreset(int, skill, int)}), and ARR preset
- *       slots store exactly {@code (skill, mode)} - so parity means
- *       resolving both values <b>server-side from the player's own
- *       preset</b>, never from client input.</li>
+ *       slots store exactly {@code (skill, mode)} - so both values resolve
+ *       <b>server-side from the player's own preset</b>, never from client
+ *       input. An art slotted to our hotbar but not equipped there has no
+ *       preset slot to act through, so the service <b>mirrors on demand</b>
+ *       ({@link #equippedSlot}): first free slot of the active preset via
+ *       ARR's own setter - the owner's cast directive, so a hotbar slot
+ *       casts without ARR-side setup - and a full preset refuses rather
+ *       than displacing an occupied slot.</li>
  *   <li>ARR messages its own cooldown refusal (red chat line) - our
  *       handler reads the same state so core's pre-activation gate
  *       carries the matching outcome, no second messaging.</li>
@@ -62,8 +69,9 @@ import org.slf4j.Logger;
  *
  * <p>Fail-closed throughout (the direct-invocation precedent from
  * ability-iss): unlearned refuses RESTRICTED (defense in depth behind the
- * eligibility rule), not-equipped-in-preset refuses RESTRICTED (the native
- * keybind cannot fire either - parity), stale preset mode refuses
+ * eligibility rule), a full preset refuses RESTRICTED with ARR's red
+ * action-bar line naming the reason (the domain messages, the pipeline
+ * carries codes), stale preset mode refuses
  * UNAVAILABLE, cooldown refuses COOLDOWN through core's pre-activation
  * gate (ARR has messaged), and a
  * remaining {@code false} from the pipeline refuses UNAVAILABLE with
@@ -112,7 +120,7 @@ public final class TensuraActivation {
     }
 
     /**
-     * The shared activation: learn-gate, preset parity resolve, then the
+     * The shared activation: learn-gate, on-demand preset mirror, then the
      * native pipeline entry.
      */
     public static ActivationResult activate(ActivationRequest request, ServerPlayer player) {
@@ -148,11 +156,12 @@ public final class TensuraActivation {
             return ActivationResult.ACTED;
         }
 
-        int[] slotAndMode = resolvePresetSlot(player, instance);
+        int[] slotAndMode = equippedSlot(player, instance, 0);
         if (slotAndMode == null) {
-            // Not in the active preset: the native keybind cannot fire
-            // either (AbilityHandler interrupts) - same gate, same refusal.
-            return ActivationResult.refused(ActivationOutcome.REFUSED_RESTRICTED);
+            // No slot to act through: ARR's preset is full - the mirror
+            // equips on demand but never displaces an occupied slot, and
+            // the domain (this service) messages the reason.
+            return refuseWithoutPresetSlot(player);
         }
         int slot = slotAndMode[0];
         int mode = slotAndMode[1];
@@ -215,13 +224,14 @@ public final class TensuraActivation {
      * packet for the resolved active-preset slot and runs its native
      * server-side body - parity by construction: same nextMode, same
      * vetoes, same native messages, same zero-residue refusals. Not
-     * learned and not slotted refuse RESTRICTED before ARR runs (this
-     * service's own refusals); after the native body an unchanged slot
-     * mode reports the closest native reason without inventing one: one
-     * mode to offer - UNAVAILABLE, anything else refused - RESTRICTED.
-     * {@code alternative} stays false: the plain native key semantics
-     * (the reverse direction needs transport state {@link ModeChangeRequest}
-     * carries neither).
+     * learned refuses RESTRICTED before ARR runs, a skill with nothing
+     * to step through refuses UNAVAILABLE before the mirror can equip it
+     * as residue, and a full preset refuses through
+     * {@link #refuseWithoutPresetSlot}; after the native body an
+     * unchanged slot mode reports ARR's own veto - refused RESTRICTED,
+     * never an invented reason. {@code alternative} stays false: the
+     * plain native key semantics (the reverse direction needs transport
+     * state {@link ModeChangeRequest} carries neither).
      */
     public static ActivationResult changeMode(ModeChangeRequest request, ServerPlayer player) {
         Optional<ManasSkillInstance> maybeInstance =
@@ -230,9 +240,12 @@ public final class TensuraActivation {
             return ActivationResult.refused(ActivationOutcome.REFUSED_RESTRICTED);
         }
         ManasSkillInstance instance = maybeInstance.get();
-        int[] slotAndMode = resolvePresetSlot(player, instance);
+        if (instance.getModes() <= 1) {
+            return ActivationResult.refused(ActivationOutcome.REFUSED_UNAVAILABLE);
+        }
+        int[] slotAndMode = equippedSlot(player, instance, 0);
         if (slotAndMode == null) {
-            return ActivationResult.refused(ActivationOutcome.REFUSED_RESTRICTED);
+            return refuseWithoutPresetSlot(player);
         }
         int before = slotAndMode[1];
         RequestAbilityModeChangePacket.changeModePacket(slotAndMode[0], false)
@@ -241,9 +254,7 @@ public final class TensuraActivation {
         if (after != null && after[1] != before) {
             return ActivationResult.ACTED;
         }
-        return ActivationResult.refused(instance.getModes() <= 1
-                ? ActivationOutcome.REFUSED_UNAVAILABLE
-                : ActivationOutcome.REFUSED_RESTRICTED);
+        return ActivationResult.refused(ActivationOutcome.REFUSED_RESTRICTED);
     }
 
     /**
@@ -343,5 +354,52 @@ public final class TensuraActivation {
             }
         }
         return null;
+    }
+
+    /**
+     * The preset slot this art acts through, <b>equipping on demand</b>
+     * (the owner's cast directive): ARR's ACTIVATE_SKILL listener and its
+     * native mode body both resolve through the active preset, so an art
+     * slotted to our hotbar but not equipped there has no slot to act on.
+     * The mirror places it in the first free slot of the active preset
+     * (ARR's own setter plus its dirty idiom) and answers with that slot;
+     * an existing slot wins untouched, and a full preset (or absent
+     * storage) answers null - no slot invented, no occupied slot
+     * displaced.
+     */
+    private static int[] equippedSlot(
+            ServerPlayer player, ManasSkillInstance instance, int mode) {
+        int[] existing = resolvePresetSlot(player, instance);
+        if (existing != null) {
+            return existing;
+        }
+        IAbility ability = TensuraStorages.getAbilityFrom(player);
+        if (ability == null) {
+            return null;
+        }
+        List<AbilitySlot> slots = ability.getAbilitySlots();
+        for (int i = 0; i < slots.size(); i++) {
+            if (slots.get(i).isEmpty()) {
+                ability.setAbilitySlot(ability.getActivePreset(), i, instance.getSkill(), mode);
+                ability.markDirty();
+                return new int[] {i, mode};
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The refusal when ARR's active preset has no room for the art (the
+     * mirror's only failure for a live player): ARR's own red action-bar
+     * line names the reason - its cooldown line's style - and the outcome
+     * stays RESTRICTED. The domain messages, the pipeline carries codes.
+     */
+    private static ActivationResult refuseWithoutPresetSlot(ServerPlayer player) {
+        if (TensuraStorages.getAbilityFrom(player) != null) {
+            player.displayClientMessage(Component.translatable(
+                            "ability_tensura.msg.preset_full")
+                    .withStyle(ChatFormatting.RED), true);
+        }
+        return ActivationResult.refused(ActivationOutcome.REFUSED_RESTRICTED);
     }
 }
