@@ -28,10 +28,10 @@ import org.bitwisemadness.abilitytensura.gate.UnlockGate;
  *       {@code assets/tensura/lang/en_us.json}), icon
  *       {@code textures/battlewill/<art>.png} (verified present for all 23).
  *       No duplicated strings or textures: metadata layering, nothing more.</li>
- *   <li><b>{@link ActivationType#UNKNOWN}</b> - this row is metadata only;
- *       native behaviour is untouched and the per-art activation mapping
- *       (hold vs press vs toggle) belongs to the provider adapter (#42)
- *       with the lifecycle catalog's evidence (#52).</li>
+ *   <li><b>{@link ActivationType#CHANNELLED}</b> - every art enters through
+ *       ARR's native hold ({@code startHoldSkill}), so held/channeled is the
+ *       declared shape; a per-ART mapping (press vs toggle) stays #42's
+ *       slice with #52's evidence.</li>
  *   <li><b>Empty costs</b> - battlewills charge native aura inside ARR's own
  *       callbacks (SPIKE-bw-1 section 2; ADR-002: NATIVE arts keep charging
  *       in their pipeline). Core must not price them.</li>
@@ -101,16 +101,21 @@ public final class BattlewillCatalog {
 
     /** One catalog entry: ARR's name and icon, native category, no costs. */
     static AbilityDefinition definitionFor(String path) {
+        String name = NAME_PREFIX + path;
         return new AbilityDefinition(
-                NAME_PREFIX + path,
+                name,
                 ResourceLocation.fromNamespaceAndPath("tensura",
                         "textures/battlewill/" + path + ".png"),
                 CATEGORY,
-                ActivationType.UNKNOWN,
+                // ARR's one pipeline entry is the native hold - channelled
+                // (a per-ART mapping stays #42's slice, with #52's evidence)
+                ActivationType.CHANNELLED,
                 List.of(),
                 ConsumptionStrategies.ALL,
                 AmountResolvers.STATIC,
                 Set.of(CATEGORY_TAG),
-                Map.of());
+                // ARR ships prose under <displayNameKey>.description; the
+                // menu resolves the key through its language files
+                Map.of("description", name + ".description"));
     }
 }

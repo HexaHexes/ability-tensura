@@ -22,6 +22,7 @@ import org.bitwisemadness.abilitycore.api.AbilityModes;
 import org.bitwisemadness.abilitycore.api.ActivationOutcome;
 import org.bitwisemadness.abilitycore.api.ActivationRequest;
 import org.bitwisemadness.abilitycore.api.ActivationResult;
+import org.bitwisemadness.abilitycore.api.ActivationSource;
 import org.bitwisemadness.abilitycore.api.ChargingModel;
 import org.bitwisemadness.abilitycore.api.CooldownOwners;
 import org.bitwisemadness.abilitycore.api.ModeChangeHandlers;
@@ -125,6 +126,25 @@ public final class TensuraActivation {
         }
         ManasSkillInstance instance = maybeInstance.get();
 
+        // The pane's Enable/Disable (hotbar#148): MENU + no slot is the
+        // toggle intent - ARR owns toggle state (setToggled +
+        // onToggleOn/Off), never the hold pipeline or its gates.
+        if (request.source() == ActivationSource.MENU
+                && request.slotContext() == ActivationRequest.NO_SLOT) {
+            if (!instance.canBeToggled(player)) {
+                return ActivationResult.refused(ActivationOutcome.REFUSED_UNAVAILABLE);
+            }
+            boolean togglingOn = !instance.isToggled();
+            instance.setToggled(togglingOn);
+            if (togglingOn) {
+                instance.onToggleOn(player);
+            } else {
+                instance.onToggleOff(player);
+            }
+            instance.markDirty();
+            return ActivationResult.ACTED;
+        }
+
         int[] slotAndMode = resolvePresetSlot(player, instance);
         if (slotAndMode == null) {
             // Not in the active preset: the native keybind cannot fire
@@ -157,6 +177,12 @@ public final class TensuraActivation {
      * as in {@link #activate}: the preset's mode is today's semantics.
      */
     public static long cooldownRemaining(ActivationRequest request, ServerPlayer player) {
+        // The toggle intent is not a cooldown question (hotbar#148's
+        // Enable/Disable must work while the hold window cools)
+        if (request.source() == ActivationSource.MENU
+                && request.slotContext() == ActivationRequest.NO_SLOT) {
+            return 0L;
+        }
         Optional<ManasSkillInstance> maybeInstance =
                 SkillAPI.getSkillsFrom(player).getSkill(request.abilityId());
         if (maybeInstance.isEmpty()) {

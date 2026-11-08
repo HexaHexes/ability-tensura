@@ -45,8 +45,9 @@ import org.bitwisemadness.abilitytensura.gate.UnlockGate;
  * shape, same reasons): native ids ({@code tensura:<id>}), ARR's own names
  * ({@code tensura.skill.<id>}) and icons ({@code textures/skill/<type>/},
  * {@code textures/magic/<group>/} - all 332 verified present in the shipped
- * jar), {@link ActivationType#UNKNOWN} until #42's activation slice maps
- * them per-#52's evidence, empty costs (ARR charges its own currencies,
+ * jar), {@link ActivationType#CHANNELLED} for the single native hold entry
+ * ({@code startHoldSkill}) - a per-ART mapping stays #42's slice with #52's
+ * evidence - empty costs (ARR charges its own currencies,
  * ADR-002 NATIVE). The category tag ({@code tensura:skill} /
  * {@code tensura:magic}) plus {@code type:<name>} tags give consumers both
  * the coarse group and the exact ARR category.</p>
@@ -178,16 +179,21 @@ public final class TensuraAbilityCatalog {
 
     /** One catalog entry: ARR's name and icon, the system's category. */
     static AbilityDefinition definitionFor(String artPath, Category category) {
+        String name = BattlewillCatalog.NAME_PREFIX + artPath;
         return new AbilityDefinition(
-                BattlewillCatalog.NAME_PREFIX + artPath,
+                name,
                 ResourceLocation.fromNamespaceAndPath(ID_NAMESPACE,
                         category.iconPath(artPath)),
                 category.category(),
-                ActivationType.UNKNOWN,
+                // ARR's one pipeline entry is the native hold - channelled
+                // (a per-ART mapping stays #42's slice, with #52's evidence)
+                ActivationType.CHANNELLED,
                 List.of(),
                 ConsumptionStrategies.ALL,
                 AmountResolvers.STATIC,
                 Set.of(category.system(), category.typeTag()),
-                Map.of());
+                // ARR ships prose under <displayNameKey>.description (355/355
+                // verified); the menu resolves the key in its language files
+                Map.of("description", name + ".description"));
     }
 }
