@@ -1,5 +1,6 @@
 package org.bitwisemadness.abilitytensura.gate;
 
+import java.util.List;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.CreativeModeTab;
@@ -65,6 +66,12 @@ public final class TensuraMenuTabs {
     static void registerAll() {
         registerTab(SKILLS_TAB, "ability_tensura.tab.skills", SKILL_ICON,
                 borrowedTabIcon("ultimate"), inCategory("tensura", "skill"));
+        // The owner's progression order for the skills strip; the ultimate
+        // slot is reserved - nothing in the pack tags type:ultimate (ARR's
+        // ULTIMATE_SKILLS ships one mysticism entry; no skill is ULTIMATE).
+        MenuTabs.subCategoryOrder(SKILLS_TAB, List.of(
+                "type:resistance", "type:intrinsic", "type:common",
+                "type:extra", "type:unique", "type:ultimate"));
         registerTab(MAGIC_TAB, "ability_tensura.tab.magic", MAGIC_ICON,
                 borrowedTabIcon("magic_spiritual"), inCategory("tensura", "magic"));
         registerTab(BATTLEWILL_TAB, "ability_tensura.tab.battlewill", BATTLEWILL_ICON,

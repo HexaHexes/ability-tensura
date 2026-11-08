@@ -41,7 +41,10 @@ where custom behaviour demands it.
   one draws is hotbar's call at draw time (`stackRendersInGui`): the item
   when its model produces pixels, else the sprite, else text only - the
   study book resolves but its model emits no quads in any GUI. Membership =
-  the definition's category.
+  the definition's category. The Skills tab also declares the owner's
+  progression strip order through hotbar's `subCategoryOrder` (resistance,
+  intrinsic, common, extra, unique, ultimate - the ultimate slot is
+  reserved: nothing in the pack tags `type:ultimate`).
   It follows the `HotbarHygiene` guard pattern: the checked entry may touch
   hotbar classes, the unchecked half (`registerAll`) is the only link site -
   tests call it directly. Hooked at the end of `UnlockGate.register()`.
