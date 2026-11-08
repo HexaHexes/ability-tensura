@@ -5,10 +5,12 @@ import io.github.manasmods.manascore.skill.api.ManasSkill;
 import io.github.manasmods.manascore.skill.api.ManasSkillInstance;
 import io.github.manasmods.manascore.skill.api.SkillAPI;
 import io.github.manasmods.tensura.ability.TensuraSkill;
+import io.github.manasmods.tensura.ability.magic.Magic;
 import io.github.manasmods.tensura.network.c2s.RequestAbilityModeChangePacket;
 import io.github.manasmods.tensura.storage.TensuraStorages;
 import io.github.manasmods.tensura.storage.ability.AbilitySlot;
 import io.github.manasmods.tensura.storage.ability.IAbility;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -18,6 +20,7 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.LivingEntity;
 import net.neoforged.fml.ModList;
 import org.bitwisemadness.abilitycore.AbilityCore;
 import org.bitwisemadness.abilitycore.api.AbilityModes;
@@ -25,11 +28,13 @@ import org.bitwisemadness.abilitycore.api.ActivationOutcome;
 import org.bitwisemadness.abilitycore.api.ActivationRequest;
 import org.bitwisemadness.abilitycore.api.ActivationResult;
 import org.bitwisemadness.abilitycore.api.ActivationSource;
+import org.bitwisemadness.abilitycore.api.ActivationType;
 import org.bitwisemadness.abilitycore.api.ChargingModel;
 import org.bitwisemadness.abilitycore.api.CooldownOwners;
 import org.bitwisemadness.abilitycore.api.ModeChangeHandlers;
 import org.bitwisemadness.abilitycore.api.ModeChangeRequest;
 import org.bitwisemadness.abilitycore.api.ModeOwners;
+import org.bitwisemadness.abilitycore.api.ResourceCost;
 import org.bitwisemadness.abilitytensura.gate.UnlockGate;
 import org.slf4j.Logger;
 
@@ -401,5 +406,121 @@ public final class TensuraActivation {
                     .withStyle(ChatFormatting.RED), true);
         }
         return ActivationResult.refused(ActivationOutcome.REFUSED_RESTRICTED);
+    }
+
+    /** Definitions-time skill resolutions (the timing probe, gametest-pinned). */
+    private static int skillsResolved;
+
+    /**
+     * How many cataloged ids resolved a live ARR skill when the
+     * definitions were built - the gametest pins this above zero, so the
+     * registration order can never silently drift to "skill registry
+     * still empty" (every shape would degrade to INSTANT, no costs).
+     */
+    public static int skillsResolvedAtRegistration() {
+        return skillsResolved;
+    }
+
+    /**
+     * One art's static menu shape (owner's bytecode brief): its
+     * activation type mapped from ARR's own signals and its declared
+     * usage costs - display metadata only, charging stays NATIVE
+     * (ADR-002; {@link ResourceCost} is exactly that descriptor).
+     *
+     * @param activation the mapped type - INSTANT is the honest fallback
+     *                   when ARR is absent or the registry was not yet
+     *                   populated (the registration probe pins the cold)
+     * @param costs      the cast currencies the art quotes at mode 0,
+     *                   positive amounts only (empty = none declared)
+     */
+    public record ArtShape(ActivationType activation, List<ResourceCost> costs) {
+    }
+
+    /**
+     * The shape for one catalog id, resolved against ARR's live skill
+     * registry. Guarded inside (the pairs' gate pattern): without Tensura
+     * the answer is the INSTANT/empty fallback and the upstream read is
+     * never linked - both catalogs call this at RegisterEvent time.
+     */
+    public static ArtShape shapeOf(ResourceLocation id) {
+        if (ModList.get() == null || !ModList.get().isLoaded("tensura")) {
+            return new ArtShape(ActivationType.INSTANT, List.of());
+        }
+        ManasSkill skill = SkillAPI.getSkillRegistry().get(id);
+        if (skill == null) {
+            return new ArtShape(ActivationType.INSTANT, List.of());
+        }
+        skillsResolved++;
+        return new ArtShape(activationTypeFor(skill), costsFor(skill));
+    }
+
+    /**
+     * The activation type, mapped from ARR's bytecode (owner's brief):
+     * the magic family's own cast-time config decides first (a cast bar
+     * reads CHARGED, zero-time magic INSTANT - its {@code canTick}/
+     * {@code onHeld} hooks are the cast mechanic, not the label); a
+     * skill overriding {@code canTick} ticks while held - CHANNELLED;
+     * a non-ticking art overriding {@code onHeld} fires on release -
+     * CHARGED (the battlewill charge pattern); everything else presses
+     * once - INSTANT. UNKNOWN is never produced: it refuses activation,
+     * and these signals always yield a real shape.
+     */
+    private static ActivationType activationTypeFor(ManasSkill skill) {
+        if (skill instanceof Magic magic) {
+            return magic.getDefaultCastTime() > 0
+                    ? ActivationType.CHARGED : ActivationType.INSTANT;
+        }
+        if (declaresOverride(skill, "canTick",
+                ManasSkillInstance.class, LivingEntity.class)) {
+            return ActivationType.CHANNELLED;
+        }
+        if (declaresOverride(skill, "onHeld",
+                ManasSkillInstance.class, LivingEntity.class, int.class, int.class)) {
+            return ActivationType.CHARGED;
+        }
+        return ActivationType.INSTANT;
+    }
+
+    /**
+     * Whether the skill's own class overrides the named ManasSkill hook:
+     * reflection over the declaring class, so registration never needs an
+     * entity instance (the upstream-shape reads stay data-free).
+     */
+    private static boolean declaresOverride(ManasSkill skill, String name,
+            Class<?>... parameters) {
+        try {
+            Method hook = skill.getClass().getMethod(name, parameters);
+            return hook.getDeclaringClass() != ManasSkill.class;
+        } catch (NoSuchMethodException absent) {
+            return false;
+        }
+    }
+
+    /**
+     * The declared usage costs (owner: show them for all abilities): the
+     * cast currency the art itself quotes - magicule for magic, aura for
+     * battlewills - at mode 0's default instance, positive amounts only.
+     * A null-entity read or an upstream refusal degrades to no costs:
+     * enrichment can never fail a registration.
+     */
+    private static List<ResourceCost> costsFor(ManasSkill skill) {
+        if (!(skill instanceof TensuraSkill tensura)) {
+            return List.of();
+        }
+        try {
+            ManasSkillInstance probe = skill.createDefaultInstance();
+            List<ResourceCost> costs = new ArrayList<>(2);
+            double magicule = tensura.getMagiculeCost(null, probe, 0);
+            if (magicule > 0) {
+                costs.add(new ResourceCost("tensura:magicule", magicule));
+            }
+            double aura = tensura.getAuraCost(null, probe, 0);
+            if (aura > 0) {
+                costs.add(new ResourceCost("tensura:aura", aura));
+            }
+            return List.copyOf(costs);
+        } catch (RuntimeException upstream) {
+            return List.of();
+        }
     }
 }

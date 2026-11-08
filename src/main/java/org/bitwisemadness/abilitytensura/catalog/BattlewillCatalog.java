@@ -3,13 +3,12 @@ package org.bitwisemadness.abilitytensura.catalog;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import net.minecraft.core.Registry;
 import net.minecraft.resources.ResourceLocation;
-import net.neoforged.neoforge.registries.RegisterEvent;
 import org.bitwisemadness.abilitycore.api.AbilityDefinition;
-import org.bitwisemadness.abilitycore.api.ActivationType;
 import org.bitwisemadness.abilitycore.api.AmountResolvers;
 import org.bitwisemadness.abilitycore.api.ConsumptionStrategies;
-import org.bitwisemadness.abilitycore.registry.AbilityRegistries;
+import org.bitwisemadness.abilitytensura.activation.TensuraActivation;
 import org.bitwisemadness.abilitytensura.gate.UnlockGate;
 
 /**
@@ -85,32 +84,36 @@ public final class BattlewillCatalog {
     }
 
     /**
-     * Registers the catalog on core's abilities registry - called from the
-     * mod-bus {@code RegisterEvent}, mirroring the extension-point-1 pattern
-     * (the same shape ability-iss uses for its cast definition). Idempotency
-     * and duplicate rules are core's; a duplicate id fails loudly.
+     * Registers the catalog on core's abilities registry - called from
+     * ARR's skill-registry event (the timing and raw-write rationale
+     * lives on {@code AbilityTensuraEvents}); idempotency and duplicate
+     * rules are core's, a duplicate id fails loudly.
      */
-    public static void register(RegisterEvent event) {
+    public static void register(Registry<AbilityDefinition> registry) {
         for (String path : ART_PATHS) {
             ResourceLocation id = idFor(path);
             UnlockGate.track(id);
-            event.register(AbilityRegistries.ABILITY_REGISTRY_KEY, id,
-                    () -> definitionFor(path));
+            // eager build: the shapes read the LIVE skill registry now
+            Registry.register(registry, id, definitionFor(path));
         }
     }
 
-    /** One catalog entry: ARR's name and icon, native category, no costs. */
+    /**
+     * One catalog entry: ARR's name and icon, native category, and the
+     * per-art shape from the shared mapper - activation mapped from ARR's
+     * bytecode, usage costs declared as display metadata (charging stays
+     * NATIVE).
+     */
     static AbilityDefinition definitionFor(String path) {
         String name = NAME_PREFIX + path;
+        TensuraActivation.ArtShape shape = TensuraActivation.shapeOf(idFor(path));
         return new AbilityDefinition(
                 name,
                 ResourceLocation.fromNamespaceAndPath("tensura",
                         "textures/battlewill/" + path + ".png"),
                 CATEGORY,
-                // ARR's one pipeline entry is the native hold - channelled
-                // (a per-ART mapping stays #42's slice, with #52's evidence)
-                ActivationType.CHANNELLED,
-                List.of(),
+                shape.activation(),
+                shape.costs(),
                 ConsumptionStrategies.ALL,
                 AmountResolvers.STATIC,
                 Set.of(CATEGORY_TAG),
