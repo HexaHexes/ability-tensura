@@ -62,39 +62,30 @@ public final class TensuraMenuTabs {
         registerAll();
     }
 
-    /** The registrations themselves (the linkable half - tests call this directly). */
-    static void registerAll() {
-        registerTab(SKILLS_TAB, "ability_tensura.tab.skills", SKILL_ICON,
-                borrowedTabIcon("ultimate"), inCategory("tensura", "skill"));
-        // The owner's progression order for the skills strip; the ultimate
-        // slot is reserved - nothing in the pack tags type:ultimate (ARR's
-        // ULTIMATE_SKILLS ships one mysticism entry; no skill is ULTIMATE).
-        MenuTabs.subCategoryOrder(SKILLS_TAB, List.of(
-                "type:resistance", "type:intrinsic", "type:common",
-                "type:extra", "type:unique", "type:ultimate"));
-        registerTab(MAGIC_TAB, "ability_tensura.tab.magic", MAGIC_ICON,
-                borrowedTabIcon("magic_spiritual"), inCategory("tensura", "magic"));
-        registerTab(BATTLEWILL_TAB, "ability_tensura.tab.battlewill", BATTLEWILL_ICON,
-                manualIcon(), inCategory("tensura", "battlewill"));
-    }
-
     /**
-     * Registers one tab with the brief's preferred item icon <b>and</b>
-     * ARR's own tab sprite as its fallback: the menu draws the stack when
-     * it renders in a GUI and the sprite when it does not (or when the
-     * stack could not be resolved at all - skill-books' tab not
-     * registered, registries not bootstrapped headless, lookup failure).
-     * Degrades, never throws.
+     * The registrations themselves (the linkable half - tests call this
+     * directly): the three tabs ride hotbar's declarable CategoryTab
+     * family (generalized for every provider, hotbar#183).
      */
-    private static void registerTab(ResourceLocation id, String displayNameKey,
-            ResourceLocation fallbackSprite, ItemStack preferred,
-            java.util.function.BiPredicate<ResourceLocation,
-                    org.bitwisemadness.abilitycore.api.AbilityDefinition> accepts) {
-        if (preferred != null && !preferred.isEmpty()) {
-            MenuTabs.register(id, displayNameKey, fallbackSprite, preferred, accepts);
-        } else {
-            MenuTabs.register(id, displayNameKey, fallbackSprite, accepts);
-        }
+    static void registerAll() {
+        // membership is definition.category() equality; icons keep their
+        // both-forms degrade; the skills strip keeps the owner's
+        // progression order (ultimate reserved - the pack never tags it)
+        MenuTabs.registerCategoryTabs(List.of(
+                new MenuTabs.CategoryTab(SKILLS_TAB, "ability_tensura.tab.skills",
+                        SKILL_ICON, borrowedTabIcon("ultimate"),
+                        ResourceLocation.fromNamespaceAndPath("tensura", "skill"),
+                        List.of("type:resistance", "type:intrinsic", "type:common",
+                                "type:extra", "type:unique", "type:ultimate"),
+                        null),
+                new MenuTabs.CategoryTab(MAGIC_TAB, "ability_tensura.tab.magic",
+                        MAGIC_ICON, borrowedTabIcon("magic_spiritual"),
+                        ResourceLocation.fromNamespaceAndPath("tensura", "magic"),
+                        null, null),
+                new MenuTabs.CategoryTab(BATTLEWILL_TAB, "ability_tensura.tab.battlewill",
+                        BATTLEWILL_ICON, manualIcon(),
+                        ResourceLocation.fromNamespaceAndPath("tensura", "battlewill"),
+                        null, null)));
     }
 
     /**
@@ -122,13 +113,5 @@ public final class TensuraMenuTabs {
         } catch (Throwable unavailable) {
             return null; // headless fixtures run without bootstrapped registries
         }
-    }
-
-    /** Membership: entries whose definition carries this exact category. */
-    private static java.util.function.BiPredicate<ResourceLocation,
-            org.bitwisemadness.abilitycore.api.AbilityDefinition> inCategory(
-            String namespace, String path) {
-        ResourceLocation category = ResourceLocation.fromNamespaceAndPath(namespace, path);
-        return (id, definition) -> definition.category().equals(category);
     }
 }
