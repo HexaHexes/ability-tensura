@@ -35,7 +35,13 @@ import org.bitwisemadness.abilitycore.api.ModeChangeHandlers;
 import org.bitwisemadness.abilitycore.api.ModeChangeRequest;
 import org.bitwisemadness.abilitycore.api.ModeOwners;
 import org.bitwisemadness.abilitycore.api.ResourceCost;
+import org.bitwisemadness.abilityhotbar.client.MenuQuery;
+import org.bitwisemadness.abilityhotbar.config.HotbarConfig;
+import org.bitwisemadness.abilityhotbar.registry.HotbarRegistry;
+import org.bitwisemadness.abilityhotbar.state.BarStateAttachments;
+import org.bitwisemadness.abilityhotbar.state.SlotAssignment;
 import org.bitwisemadness.abilitytensura.gate.UnlockGate;
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 
 /**
@@ -161,6 +167,10 @@ public final class TensuraActivation {
             return ActivationResult.ACTED;
         }
 
+        // Owner's custom-preset-per-hotbar: the active bar maps to its own
+        // ARR preset (the tail - native presets untouched) and mirrors the
+        // bar's slots in first; unmapped bars keep ARR's active preset
+        mapBarToPreset(player, activeBarId(player));
         int[] slotAndMode = equippedSlot(player, instance, 0);
         if (slotAndMode == null) {
             // No slot to act through: ARR's preset is full - the mirror
@@ -248,6 +258,10 @@ public final class TensuraActivation {
         if (instance.getModes() <= 1) {
             return ActivationResult.refused(ActivationOutcome.REFUSED_UNAVAILABLE);
         }
+        // the pill cycles against ITS bar (core#132): map that bar's
+        // preset and mirror its slots, exactly like the activation path
+        mapBarToPreset(player,
+                request.barId() == null ? activeBarId(player) : request.barId());
         int[] slotAndMode = equippedSlot(player, instance, 0);
         if (slotAndMode == null) {
             return refuseWithoutPresetSlot(player);
@@ -406,6 +420,137 @@ public final class TensuraActivation {
                     .withStyle(ChatFormatting.RED), true);
         }
         return ActivationResult.refused(ActivationOutcome.REFUSED_RESTRICTED);
+    }
+
+    /**
+     * Whether hotbar is present (hotbar is optional for this mod - every
+     * hotbar-typed read below runs behind this gate, the HotbarHygiene
+     * guarded-callsite pattern).
+     */
+    private static boolean hotbarLoaded() {
+        return ModList.get() != null && ModList.get().isLoaded("ability_hotbar");
+    }
+
+    /** The hotbar state's active bar, or null (hotbar absent / no state). */
+    @Nullable
+    private static ResourceLocation activeBarId(ServerPlayer player) {
+        if (!hotbarLoaded()) {
+            return null;
+        }
+        return player.getData(BarStateAttachments.BAR_STATE).activeBarId();
+    }
+
+    /**
+     * Points ARR's active preset at the bar's custom preset and mirrors
+     * the bar's slots into it (owner: custom presets for our hotbars -
+     * the first-empty-slot mirror collided with a full native bar). A
+     * null bar or an unmanaged bar is the legacy no-op: ARR's current
+     * active preset keeps deciding (hotbar absent, unknown id).
+     */
+    private static void mapBarToPreset(ServerPlayer player, @Nullable ResourceLocation bar) {
+        Integer preset = presetForBar(player, bar);
+        if (bar == null || preset == null) {
+            return;
+        }
+        IAbility ability = TensuraStorages.getAbilityFrom(player);
+        if (ability == null) {
+            return;
+        }
+        ability.setActivePreset(preset);
+        mirrorBarIntoPreset(player, bar, preset);
+    }
+
+    /**
+     * The ARR preset a hotbar bar acts through: hotbar's manageable bars
+     * in their own cycle order map onto the <b>tail</b> of ARR's presets
+     * - bar 0 owns the LAST preset, the next bar the one before - so the
+     * player's native presets stay untouched and every bar gets
+     * <b>isolated skills and modes</b> (no cross-bar collisions, no
+     * fighting a full native bar). Null bar or an unmanaged bar answers
+     * null (fail closed to ARR's active preset).
+     */
+    @Nullable
+    private static Integer presetForBar(ServerPlayer player, @Nullable ResourceLocation bar) {
+        if (bar == null || !hotbarLoaded()) {
+            return null;
+        }
+        int index = MenuQuery.manageableBars(
+                HotbarConfig.effectiveHotbarCount(), HotbarRegistry.all()).indexOf(bar);
+        if (index < 0) {
+            return null;
+        }
+        IAbility ability = TensuraStorages.getAbilityFrom(player);
+        if (ability == null) {
+            return null;
+        }
+        int preset = ability.getPresets().size() - 1 - index;
+        return preset >= 0 ? preset : null;
+    }
+
+    /**
+     * Mirrors the hotbar bar's slots into its preset (owner: our hotbar
+     * replaces the preset system): each bar slot lands at the same index
+     * with its stored mode mapped through the declared cycle (a slot
+     * storing none keeps the preset's current mode), every other preset
+     * slot clears. Clamped by the preset's own size; ARR's dirty idiom
+     * carries it. Hotbar-typed reads: gated via {@link #presetForBar}.
+     */
+    private static void mirrorBarIntoPreset(ServerPlayer player,
+            ResourceLocation bar, int preset) {
+        IAbility ability = TensuraStorages.getAbilityFrom(player);
+        if (ability == null) {
+            return;
+        }
+        SlotAssignment[] row =
+                player.getData(BarStateAttachments.BAR_STATE).assignmentsOf(bar);
+        if (row == null) {
+            return;
+        }
+        List<AbilitySlot> slots = ability.getAbilitySlots(preset);
+        for (int i = 0; i < slots.size(); i++) {
+            AbilitySlot existing = slots.get(i);
+            SlotAssignment slot = i < row.length ? row[i] : null;
+            ManasSkill skill = null;
+            ResourceLocation id = null;
+            String storedMode = null;
+            if (slot != null && slot.isAssigned() && slot.abilityId() != null) {
+                skill = SkillAPI.getSkillRegistry().get(slot.abilityId());
+                id = slot.abilityId();
+                storedMode = slot.mode();
+            }
+            if (skill == null) {
+                if (!existing.isEmpty()) {
+                    ability.setAbilitySlot(preset, i, AbilitySlot.getEmpty());
+                }
+                continue;
+            }
+            ability.setAbilitySlot(preset, i, skill,
+                    modeIndexOf(id, storedMode, existing.getMode()));
+        }
+        ability.markDirty();
+    }
+
+    /**
+     * The preset's integer mode for our stored mode id: the declared
+     * cycle's index, the preset's current mode when our slot stores none
+     * (keep what ARR had), or 0 for a fresh default.
+     */
+    private static int modeIndexOf(@Nullable ResourceLocation id,
+            @Nullable String storedMode, int fallback) {
+        if (storedMode == null || id == null) {
+            return fallback;
+        }
+        Optional<List<AbilityModes.Mode>> modes = AbilityModes.get(id);
+        if (modes.isEmpty()) {
+            return fallback;
+        }
+        List<AbilityModes.Mode> declared = modes.get();
+        for (int i = 0; i < declared.size(); i++) {
+            if (declared.get(i).id().equals(storedMode)) {
+                return i;
+            }
+        }
+        return fallback;
     }
 
     /** Definitions-time skill resolutions (the timing probe, gametest-pinned). */

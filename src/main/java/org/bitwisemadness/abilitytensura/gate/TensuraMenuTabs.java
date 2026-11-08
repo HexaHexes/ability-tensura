@@ -1,6 +1,7 @@
 package org.bitwisemadness.abilitytensura.gate;
 
 import java.util.List;
+import java.util.Map;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.CreativeModeTab;
@@ -50,6 +51,19 @@ public final class TensuraMenuTabs {
             ResourceLocation.fromNamespaceAndPath("tensura",
                     "textures/gui/battlewill/battlewill_tab_icon");
 
+    /** Our subcategory tags to Tensura Skill Books' per-category creative
+     * tabs - the study-book stack whose texture differs per subcategory. */
+    private static final Map<String, String> SKILL_BOOK_CHIPS = Map.ofEntries(
+            Map.entry("type:common", "common"),
+            Map.entry("type:extra", "extra"),
+            Map.entry("type:intrinsic", "intrinsic"),
+            Map.entry("type:resistance", "resistance"),
+            Map.entry("type:unique", "unique"),
+            Map.entry("type:ultimate", "ultimate"),
+            Map.entry("type:aspectual", "magic_aspectual"),
+            Map.entry("type:spiritual", "magic_spiritual"),
+            Map.entry("type:summoning", "magic_summoning"));
+
     private TensuraMenuTabs() {
     }
 
@@ -86,6 +100,21 @@ public final class TensuraMenuTabs {
                         BATTLEWILL_ICON, manualIcon(),
                         ResourceLocation.fromNamespaceAndPath("tensura", "battlewill"),
                         null, null)));
+        registerChipIcons();
+    }
+
+    /**
+     * Chip icons from Skill Books' per-category study books (owner: the
+     * mod shows a different texture per subcategory). Headless fixtures
+     * resolve no stack - the strip degrades to text, never a crash.
+     */
+    private static void registerChipIcons() {
+        for (var entry : SKILL_BOOK_CHIPS.entrySet()) {
+            ItemStack stack = borrowedTabIcon(entry.getValue());
+            if (stack != null && !stack.isEmpty()) {
+                MenuTabs.subCategoryIcon(entry.getKey(), null, stack);
+            }
+        }
     }
 
     /**
