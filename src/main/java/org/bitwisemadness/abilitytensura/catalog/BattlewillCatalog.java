@@ -34,9 +34,13 @@ import org.bitwisemadness.abilitytensura.gate.UnlockGate;
  *   <li><b>Empty costs</b> - battlewills charge native aura inside ARR's own
  *       callbacks (SPIKE-bw-1 section 2; ADR-002: NATIVE arts keep charging
  *       in their pipeline). Core must not price them.</li>
- *   <li><b>No styles here</b> - the style layer is content-shaped and rides
- *       the deferred Better Spellcasting track (#10); this catalog carries
- *       only the {@code battlewill} category tag.</li>
+ *   <li><b>Real subcategories, no bare duplication</b> (owner: battlewills
+ *       were both a category and a subcategory) - each art carries ONE
+ *       {@code type:} tag from ARR's own battlewill structure (its three
+ *       packages: melee, projectile, utility), and the category itself
+ *       stays the {@code tensura:battlewill} definition category + tab.
+ *       The style layer still rides datapacks (#10) - they add tags, the
+ *       catalog never blocks them.</li>
  * </ul>
  */
 public final class BattlewillCatalog {
@@ -64,8 +68,31 @@ public final class BattlewillCatalog {
     public static final ResourceLocation CATEGORY =
             ResourceLocation.fromNamespaceAndPath("tensura", "battlewill");
 
-    /** The tag every catalog entry carries (styles arrive via datapack). */
-    public static final String CATEGORY_TAG = "battlewill";
+    /**
+     * ARR's battlewill structure - its three packages, mapped to the
+     * strip's subcategory tags (the remainder is utility; the coverage
+     * gametest pins the split against {@link #ART_PATHS}).
+     */
+    private static final List<String> MELEE = List.of(
+            "aura_slash", "aura_sword", "earthshatter_kick", "eight_petals_flash",
+            "five_petals_thrust", "heavy_slash", "ogre_sword_guillotine",
+            "roaring_lion_punch");
+
+    private static final List<String> PROJECTILE = List.of(
+            "dark_eight_palms", "death_march_dance", "elephant_stampede",
+            "magic_bullet", "maximum_magic_bullet", "ogre_flame",
+            "ogre_sword_cannon");
+
+    /**
+     * One art's {@code type:} subcategory tag (never a bare category
+     * dup). Public so the coverage gametest reads the very same rule.
+     */
+    public static String subcategoryTag(String path) {
+        if (MELEE.contains(path)) {
+            return "type:melee";
+        }
+        return PROJECTILE.contains(path) ? "type:projectile" : "type:utility";
+    }
 
     private BattlewillCatalog() {
     }
@@ -116,7 +143,7 @@ public final class BattlewillCatalog {
                 shape.costs(),
                 ConsumptionStrategies.ALL,
                 AmountResolvers.STATIC,
-                Set.of(CATEGORY_TAG),
+                Set.of(subcategoryTag(path)),
                 // Owner's precedence: foxablaze mod key, shipped wiki.gg
                 // prose, ARR's key - keys render translated, prose literally
                 Map.of("description",

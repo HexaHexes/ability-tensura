@@ -51,18 +51,25 @@ public final class TensuraMenuTabs {
             ResourceLocation.fromNamespaceAndPath("tensura",
                     "textures/gui/battlewill/battlewill_tab_icon");
 
-    /** Our subcategory tags to Tensura Skill Books' per-category creative
-     * tabs - the study-book stack whose texture differs per subcategory. */
-    private static final Map<String, String> SKILL_BOOK_CHIPS = Map.ofEntries(
-            Map.entry("type:common", "common"),
-            Map.entry("type:extra", "extra"),
-            Map.entry("type:intrinsic", "intrinsic"),
-            Map.entry("type:resistance", "resistance"),
-            Map.entry("type:unique", "unique"),
-            Map.entry("type:ultimate", "ultimate"),
-            Map.entry("type:aspectual", "magic_aspectual"),
-            Map.entry("type:spiritual", "magic_spiritual"),
-            Map.entry("type:summoning", "magic_summoning"));
+    /**
+     * Our subcategory tags to ARR's own per-category art (owner: the
+     * chips were missing their icons - skill-books' study-book stack
+     * renders nothing in a GUI context, so these are SPRITES: skill and
+     * magic group buttons, battlewill's tab icon as its family mark).
+     */
+    private static final Map<String, String> CHIP_SPRITES = Map.ofEntries(
+            Map.entry("type:common", "textures/gui/skill/common"),
+            Map.entry("type:extra", "textures/gui/skill/extra"),
+            Map.entry("type:intrinsic", "textures/gui/skill/intrinsic"),
+            Map.entry("type:resistance", "textures/gui/skill/resistance"),
+            Map.entry("type:unique", "textures/gui/skill/unique"),
+            Map.entry("type:ultimate", "textures/gui/skill/ultimate"),
+            Map.entry("type:aspectual", "textures/gui/magic/aspectual_magic_button"),
+            Map.entry("type:spiritual", "textures/gui/magic/spiritual_magic_button"),
+            Map.entry("type:summoning", "textures/gui/magic/summoning_magic_button"),
+            Map.entry("type:melee", "textures/gui/battlewill/battlewill_tab_icon"),
+            Map.entry("type:projectile", "textures/gui/battlewill/battlewill_tab_icon"),
+            Map.entry("type:utility", "textures/gui/battlewill/battlewill_tab_icon"));
 
     private TensuraMenuTabs() {
     }
@@ -104,16 +111,16 @@ public final class TensuraMenuTabs {
     }
 
     /**
-     * Chip icons from Skill Books' per-category study books (owner: the
-     * mod shows a different texture per subcategory). Headless fixtures
-     * resolve no stack - the strip degrades to text, never a crash.
+     * Chip icons from ARR's own per-category art (owner: the chips were
+     * missing their icons - SPRITES, not item stacks, because a study
+     * book's baked model renders nothing in any vanilla GUI context).
+     * Each tag maps to its tensura texture; unknown paths never register.
      */
     private static void registerChipIcons() {
-        for (var entry : SKILL_BOOK_CHIPS.entrySet()) {
-            ItemStack stack = borrowedTabIcon(entry.getValue());
-            if (stack != null && !stack.isEmpty()) {
-                MenuTabs.subCategoryIcon(entry.getKey(), null, stack);
-            }
+        for (var entry : CHIP_SPRITES.entrySet()) {
+            MenuTabs.subCategoryIcon(entry.getKey(),
+                    ResourceLocation.fromNamespaceAndPath("tensura", entry.getValue()),
+                    null);
         }
     }
 
