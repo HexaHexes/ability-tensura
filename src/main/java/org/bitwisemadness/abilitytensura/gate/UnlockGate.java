@@ -24,7 +24,6 @@ import org.bitwisemadness.abilitycore.api.AvailabilityProviders;
 import org.bitwisemadness.abilitycore.api.AvailabilityState;
 import org.bitwisemadness.abilitycore.api.Metric;
 import org.bitwisemadness.abilitycore.api.VisibilityHandlers;
-import org.bitwisemadness.abilitycore.discovery.AbilityDiscovery;
 
 /**
  * The unlock gate (owner directive, 2026-11-06): <b>every ability this mod
@@ -198,21 +197,21 @@ public final class UnlockGate {
     }
 
     /**
-     * Tensura's menu visibility rule (core#124, extended by the owner's
-     * brief): an art lists when the player has unlocked it, and every
-     * resistance lists from the start - known at ARR's origin, usable
-     * only once learned (the eligibility refusal and the menu's grey
-     * carry that half). Unknown (no player) stays visible: unknown never
-     * hides (hotbar#153's never-guess).
+     * Tensura's menu visibility rule (core#124, owner's corrected rule):
+     * an art lists when the player has <b>learned</b> it, or when it is
+     * ARR-known with <b>mastery above zero</b> - a known-and-untouched
+     * art stays hidden. The eligibility refusal and the menu's grey keep
+     * "usable only once learned" (hotbar#153's never-guess: unknown
+     * never hides).
      */
     public static boolean menuVisible(Player player, ResourceLocation id) {
         if (AbilityUnlocks.isLearned(player, id).orElse(Boolean.TRUE)) {
             return true;
         }
-        // Known-from-start: resistance-tagged arts (the definition is
-        // core's; this gate never reads ARR at visibility time)
-        return AbilityDiscovery.get(id)
-                .map(definition -> definition.tags().contains("type:resistance"))
+        // Clause two: ARR-known with mastery > 0 - the instance's own
+        // progression read (a known art with zero mastery never surfaces)
+        return SkillAPI.getSkillsFrom(player).getSkill(id)
+                .map(instance -> instance.getMastery() > 0)
                 .orElse(false);
     }
 
