@@ -29,6 +29,7 @@ import org.bitwisemadness.abilitycore.api.ModeChangeRequest;
 import org.bitwisemadness.abilitycore.api.ModeOwners;
 import org.bitwisemadness.abilitycore.api.VisibilityHandlers;
 import org.bitwisemadness.abilitycore.discovery.AbilityDiscovery;
+import org.bitwisemadness.abilityhotbar.state.BarStateAttachments;
 import org.bitwisemadness.abilitytensura.AbilityTensura;
 import org.bitwisemadness.abilitytensura.activation.TensuraActivation;
 import org.bitwisemadness.abilitytensura.catalog.BattlewillCatalog;
@@ -175,6 +176,110 @@ public final class AbilityTensuraGameTests {
                 "definitions must resolve ARR skills at RegisterEvent (resolved="
                         + resolved + " of " + TensuraAbilityCatalog.expectedIds().size() + ")");
         helper.succeed();
+    }
+
+    /**
+     * The owner's custom-preset directive, both environments: WITH
+     * hotbar, a cast maps the active bar to its <b>own preset at the
+     * tail</b> of ARR's presets and mirrors the bar's slots into it - the
+     * player's native presets stay byte-for-byte untouched, so the
+     * "ability bar is full" collision of first-empty-slot mirroring can
+     * never happen, and each bar's skills/modes stay isolated. WITHOUT
+     * hotbar (the repo's living linkage proof - it is a soft hook and
+     * the gametest boots without it), the soft gates must take the
+     * legacy path: ARR's own active preset decides, never remapped.
+     */
+    @GameTest(template = "empty")
+    public static void customPresetsPerHotbarLeaveNativePresetsAlone(
+            GameTestHelper helper) {
+        check(ModList.get().isLoaded("tensura"),
+                "Tensura must be staged for the custom-preset test");
+        boolean hotbarStaged = ModList.get().isLoaded("ability_hotbar");
+        ServerPlayer player = mockPlayer(helper);
+        String lastStage = "no candidate attempted";
+
+        for (ResourceLocation id : TensuraAbilityCatalog.expectedIds().stream().limit(8)
+                .toList()) {
+            ManasSkill skill = SkillAPI.getSkillRegistry().get(id);
+            if (skill == null) {
+                lastStage = "registry miss: " + id;
+                continue;
+            }
+            SkillAPI.getSkillsFrom(player).updateSkill(skill.createDefaultInstance(), true);
+            if (SkillAPI.getSkillsFrom(player).getSkill(id).isEmpty()) {
+                lastStage = "updateSkill did not register: " + id;
+                continue;
+            }
+            IAbility ability = TensuraStorages.getAbilityFrom(player);
+            if (ability == null) {
+                lastStage = "ability storage missing";
+                continue;
+            }
+            if (ability.isAbilityInActivePreset(skill)) {
+                lastStage = "fixture leak: " + id + " already equipped";
+                continue;
+            }
+            int presets = ability.getPresets().size();
+            check(presets > 1, "the player must have several presets to map onto");
+            var nativeBefore = java.util.List.copyOf(ability.getAbilitySlots(0));
+            int activeBefore = ability.getActivePreset();
+
+            if (hotbarStaged) {
+                // our menu's built-in window bar, with the skill slotted to it
+                player.setData(BarStateAttachments.BAR_STATE,
+                        org.bitwisemadness.abilityhotbar.state.BarState.empty(9, 1)
+                                .withAssignment(0, id));
+            }
+            IExistence existence = TensuraStorages.getExistenceFrom(player);
+            if (existence == null) {
+                lastStage = "existence storage missing";
+                continue;
+            }
+            existence.setMagicule(EnergyHelper.getMaxMagicule(player));
+            existence.setAura(EnergyHelper.getMaxAura(player));
+
+            var result = AbilityCore.PIPELINE.run(
+                    ActivationRequest.of(id, ActivationSource.DIRECT_SLOT), player);
+            if (result.outcome() != ActivationOutcome.ACTED) {
+                lastStage = "pipeline refused " + id + ": " + result.outcome();
+                continue;
+            }
+            check(ability.isAbilityInActivePreset(skill),
+                    "the skill must be equipped after the cast");
+            if (!hotbarStaged) {
+                // the linkage proof: soft gates took the legacy path
+                check(ability.getActivePreset() == activeBefore,
+                        "without hotbar ARR's own active preset must decide "
+                                + "(no remap), active=" + ability.getActivePreset());
+                helper.succeed();
+                return;
+            }
+            check(ability.getActivePreset() == presets - 1,
+                    "bar 0 must map to the LAST preset (active="
+                            + ability.getActivePreset() + " of " + presets + ")");
+            var nativeAfter = ability.getAbilitySlots(0);
+            check(nativeAfter.size() == nativeBefore.size(),
+                    "the native preset keeps its shape");
+            for (int i = 0; i < nativeAfter.size(); i++) {
+                boolean same = sameSlot(nativeBefore.get(i), nativeAfter.get(i));
+                check(same, "the native preset must stay untouched at slot " + i);
+            }
+            helper.succeed();
+            return;
+        }
+        check(false, "no catalog skill cast through a custom preset; last stage: "
+                + lastStage);
+    }
+
+    /** Slot-for-slot equality (preset immutability pin). */
+    private static boolean sameSlot(
+            io.github.manasmods.tensura.storage.ability.AbilitySlot before,
+            io.github.manasmods.tensura.storage.ability.AbilitySlot after) {
+        if (before.isEmpty() || after.isEmpty()) {
+            return before.isEmpty() && after.isEmpty();
+        }
+        return before.getSkill() == after.getSkill()
+                && before.getMode() == after.getMode();
     }
 
     private static void check(boolean condition, String message) {

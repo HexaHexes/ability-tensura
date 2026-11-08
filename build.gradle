@@ -157,7 +157,7 @@ dependencies {
     // bundled - and on the test runtime classpath for the contract test below.
     // Deliberate bump (docs/release-plan.md): the resource pairs need core's
     // provider/consumer surface and the mod-gated declare overloads (#88/#92).
-    def abilityCore = 'org.bitwisemadness.abilitycore:ability_core:1.0.0-alpha.48'
+    def abilityCore = 'org.bitwisemadness.abilitycore:ability_core:1.0.1-alpha.01'
     compileOnly abilityCore
     testImplementation abilityCore
     // Core is a runtime mod for every dev run and the GameTest server: the
@@ -207,7 +207,7 @@ dependencies {
     // a runtime: "optional" means absent must keep working (the gametest
     // boots without hotbar as the living proof, and every callsite sits
     // behind a ModList gate - the hotbar#120 linkage lesson).
-    def abilityHotbar = 'org.bitwisemadness.abilityhotbar:ability_hotbar:1.0.0-alpha.90'
+    def abilityHotbar = 'org.bitwisemadness.abilityhotbar:ability_hotbar:1.0.0-alpha.92'
     compileOnly abilityHotbar
     testImplementation abilityHotbar
     // EventResult + Event for the ManasCore REMOVE_SKILL listener (the
@@ -225,7 +225,7 @@ test {
 // "All N required tests passed :)" when every required test succeeds. Keep
 // expectedTests in sync with the @GameTest methods in src/gametest.
 tasks.matching { it.name == 'runGameTestServer' }.configureEach {
-    def expectedTests = 10
+    def expectedTests = 11
     doLast {
         def log = file('run/logs/latest.log')
         if (!log.exists()) {

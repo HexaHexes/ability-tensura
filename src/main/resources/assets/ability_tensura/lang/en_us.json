@@ -1,4 +1,6 @@
 {
+  "ability_hotbar.resource.tensura.aura": "Aura",
+  "ability_hotbar.resource.tensura.magicule": "Magicules",
   "ability_tensura.menu.field.mastery": "Mastery",
   "ability_tensura.menu.field.status": "Status",
   "ability_tensura.msg.preset_full": "Your Tensura ability bar is full - free a slot first",
