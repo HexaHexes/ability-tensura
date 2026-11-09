@@ -1,5 +1,6 @@
 package org.bitwisemadness.abilitytensura.gate;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -8,7 +9,9 @@ import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.fml.ModList;
+import org.bitwisemadness.abilitycore.config.ConfigDiagnostics;
 import org.bitwisemadness.abilityhotbar.registry.MenuTabs;
+import org.bitwisemadness.abilitytensura.config.TensuraClientConfig;
 
 /**
  * Tensura's registered menu tabs (ability-tensura#75, refined by the
@@ -87,27 +90,82 @@ public final class TensuraMenuTabs {
      * The registrations themselves (the linkable half - tests call this
      * directly): the three tabs ride hotbar's declarable CategoryTab
      * family (generalized for every provider, hotbar#183).
+     *
+     * <p>The pack chooses which tabs appear, their order and the Skills
+     * strip's order ({@code menu.tabs.*}, {@code menu.tabOrder},
+     * {@code menu.skillsSubCategoryOrder}), and whether chips carry their
+     * sprite ({@code menu.showChipIcons}). This runs at common setup,
+     * which also happens on dedicated servers where the CLIENT spec is
+     * never loaded - so every read goes through core's
+     * {@code readOrDefault} and falls back to the shipped default.</p>
      */
     static void registerAll() {
         // membership is definition.category() equality; icons keep their
         // both-forms degrade; the skills strip keeps the owner's
-        // progression order (ultimate reserved - the pack never tags it)
-        MenuTabs.registerCategoryTabs(List.of(
-                new MenuTabs.CategoryTab(SKILLS_TAB, "ability_tensura.tab.skills",
-                        SKILL_ICON, borrowedTabIcon("ultimate"),
+        // progression order unless the pack reorders it
+        List<MenuTabs.CategoryTab> tabs = new ArrayList<>();
+        for (String which : tabOrder()) {
+            if (!tabShown(which)) {
+                continue;
+            }
+            switch (which) {
+                case "skills" -> tabs.add(new MenuTabs.CategoryTab(SKILLS_TAB,
+                        "ability_tensura.tab.skills", SKILL_ICON, borrowedTabIcon("ultimate"),
                         ResourceLocation.fromNamespaceAndPath("tensura", "skill"),
-                        List.of("type:resistance", "type:intrinsic", "type:common",
-                                "type:extra", "type:unique", "type:ultimate"),
-                        null),
-                new MenuTabs.CategoryTab(MAGIC_TAB, "ability_tensura.tab.magic",
-                        MAGIC_ICON, borrowedTabIcon("magic_spiritual"),
+                        skillsSubOrder(), null));
+                case "magic" -> tabs.add(new MenuTabs.CategoryTab(MAGIC_TAB,
+                        "ability_tensura.tab.magic", MAGIC_ICON, borrowedTabIcon("magic_spiritual"),
                         ResourceLocation.fromNamespaceAndPath("tensura", "magic"),
-                        null, null),
-                new MenuTabs.CategoryTab(BATTLEWILL_TAB, "ability_tensura.tab.battlewill",
-                        BATTLEWILL_ICON, manualIcon(),
+                        null, null));
+                case "battlewill" -> tabs.add(new MenuTabs.CategoryTab(BATTLEWILL_TAB,
+                        "ability_tensura.tab.battlewill", BATTLEWILL_ICON, manualIcon(),
                         ResourceLocation.fromNamespaceAndPath("tensura", "battlewill"),
-                        null, null)));
-        registerChipIcons();
+                        null, null));
+                default -> { /* unknown entry: the spec's validator already refused it */ }
+            }
+        }
+        if (!tabs.isEmpty()) {
+            MenuTabs.registerCategoryTabs(tabs);
+        }
+        if (chipIconsShown()) {
+            registerChipIcons();
+        }
+    }
+
+    /** The pack's tab order; the shipped order when the spec is unloaded. */
+    private static List<String> tabOrder() {
+        return List.copyOf(ConfigDiagnostics.readOrDefault("menu.tabOrder",
+                () -> TensuraClientConfig.TAB_ORDER.get(),
+                List.of("skills", "magic", "battlewill")));
+    }
+
+    /** Whether one tab appears (menu.tabs.*); shipped default when unloaded. */
+    private static boolean tabShown(String which) {
+        return switch (which) {
+            case "skills" -> ConfigDiagnostics.readOrDefault("menu.tabs.skills",
+                    () -> TensuraClientConfig.TAB_SKILLS.get(), true);
+            case "magic" -> ConfigDiagnostics.readOrDefault("menu.tabs.magic",
+                    () -> TensuraClientConfig.TAB_MAGIC.get(), true);
+            case "battlewill" -> ConfigDiagnostics.readOrDefault("menu.tabs.battlewill",
+                    () -> TensuraClientConfig.TAB_BATTLEWILL.get(), true);
+            default -> false;
+        };
+    }
+
+    /** The Skills strip's order; the owner's progression when unloaded. */
+    private static List<String> skillsSubOrder() {
+        List<? extends String> configured = ConfigDiagnostics.readOrDefault(
+                "menu.skillsSubCategoryOrder",
+                () -> TensuraClientConfig.SKILLS_SUB_CATEGORY_ORDER.get(),
+                List.of("type:resistance", "type:intrinsic", "type:common",
+                        "type:extra", "type:unique", "type:ultimate"));
+        return List.copyOf(configured);
+    }
+
+    /** Whether chips carry their sprite; shipped default when unloaded. */
+    private static boolean chipIconsShown() {
+        return ConfigDiagnostics.readOrDefault("menu.showChipIcons",
+                () -> TensuraClientConfig.SHOW_CHIP_ICONS.get(), true);
     }
 
     /**

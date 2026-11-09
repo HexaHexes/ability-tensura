@@ -40,6 +40,7 @@ import org.bitwisemadness.abilityhotbar.config.HotbarConfig;
 import org.bitwisemadness.abilityhotbar.registry.HotbarRegistry;
 import org.bitwisemadness.abilityhotbar.state.BarStateAttachments;
 import org.bitwisemadness.abilityhotbar.state.SlotAssignment;
+import org.bitwisemadness.abilitytensura.config.TensuraServerConfig;
 import org.bitwisemadness.abilitytensura.gate.UnlockGate;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
@@ -483,6 +484,10 @@ public final class TensuraActivation {
         if (existing != null) {
             return existing;
         }
+        if (!TensuraServerConfig.AUTO_EQUIP_ON_CAST.get()) {
+            // pack turned on-demand equipping off: never invent a slot
+            return null;
+        }
         IAbility ability = TensuraStorages.getAbilityFrom(player);
         if (ability == null) {
             return null;
@@ -578,6 +583,11 @@ public final class TensuraActivation {
      * <b>isolated skills and modes</b> (no cross-bar collisions, no
      * fighting a full native bar). Null bar or an unmanaged bar answers
      * null (fail closed to ARR's active preset).
+     *
+     * <p>The pack chooses the mapping ({@code activation.presetMapping}):
+     * {@code TAIL} (the shipped behaviour), {@code HEAD} (bar 0 owns the
+     * first preset) or {@code OFF} (no mapping at all - ARR's own active
+     * preset keeps deciding, the legacy no-op).</p>
      */
     @Nullable
     private static Integer presetForBar(ServerPlayer player, @Nullable ResourceLocation bar) {
@@ -593,8 +603,15 @@ public final class TensuraActivation {
         if (ability == null) {
             return null;
         }
-        int preset = ability.getPresets().size() - 1 - index;
-        return preset >= 0 ? preset : null;
+        TensuraServerConfig.PresetMapping mapping = TensuraServerConfig.PRESET_MAPPING.get();
+        if (mapping == TensuraServerConfig.PresetMapping.OFF) {
+            return null; // no mapping: ARR's own active preset decides
+        }
+        int presets = ability.getPresets().size();
+        int preset = mapping == TensuraServerConfig.PresetMapping.TAIL
+                ? presets - 1 - index
+                : index;
+        return preset >= 0 && preset < presets ? preset : null;
     }
 
     /**

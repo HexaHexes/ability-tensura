@@ -9,6 +9,7 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 import org.bitwisemadness.abilityhotbar.client.AbilityMenuScreen;
 import org.bitwisemadness.abilitytensura.AbilityTensura;
+import org.bitwisemadness.abilitytensura.config.TensuraClientConfig;
 
 /**
  * The Tensura RPG System menu replacement (#70, phase 2): with TRS
@@ -85,6 +86,9 @@ public final class TrsMenuBridge {
         if (!ModList.get().isLoaded("tensuraevolution")
                 || !ModList.get().isLoaded("ability_hotbar")) {
             return;
+        }
+        if (!TensuraClientConfig.REPLACE_TRS_EQUIP_SCREEN.get()) {
+            return; // pack keeps Tensura Evolution's own equip screens
         }
         if (shouldReplace(true, event.getNewScreen())) {
             event.setNewScreen(new AbilityMenuScreen());
