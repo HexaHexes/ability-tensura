@@ -25,6 +25,7 @@ import org.bitwisemadness.abilitycore.api.AvailabilityState;
 import org.bitwisemadness.abilitycore.api.Metric;
 import org.bitwisemadness.abilitycore.api.VisibilityHandlers;
 import org.bitwisemadness.abilitycore.discovery.AbilityDiscovery;
+import org.bitwisemadness.abilitytensura.config.TensuraServerConfig;
 
 /**
  * The unlock gate (owner directive, 2026-11-06): <b>every ability this mod
@@ -106,6 +107,9 @@ public final class UnlockGate {
                 if (!ids.contains(id)) {
                     return Optional.empty(); // not one of ours - never gate
                 }
+                if (!TensuraServerConfig.REQUIRE_UNLOCK.get()) {
+                    return Optional.empty(); // pack turned the unlock gate off
+                }
                 return refusalFor(id, isLearned(player, id));
             }
 
@@ -134,7 +138,8 @@ public final class UnlockGate {
         // authority. Guarded callsite (hotbar#120).
         SkillEvents.REMOVE_SKILL.register((instance, entity, changer) -> {
             if (entity instanceof ServerPlayer player
-                    && ModList.get().isLoaded("ability_hotbar")) {
+                    && ModList.get().isLoaded("ability_hotbar")
+                    && TensuraServerConfig.REMOVE_UNLEARNED_FROM_BARS.get()) {
                 ResourceLocation removed = instance.getSkillId();
                 HotbarHygiene.apply(player, id -> id.equals(removed));
             }
@@ -153,7 +158,8 @@ public final class UnlockGate {
      */
     public static void reconcile(ServerPlayer player) {
         if (ModList.get() == null || !ModList.get().isLoaded("tensura")
-                || !ModList.get().isLoaded("ability_hotbar")) {
+                || !ModList.get().isLoaded("ability_hotbar")
+                || !TensuraServerConfig.REMOVE_UNLEARNED_FROM_BARS.get()) {
             return;
         }
         HotbarHygiene.apply(player, id -> TRACKED.contains(id) && !isLearned(player, id));
@@ -210,19 +216,25 @@ public final class UnlockGate {
      * never hides).
      */
     public static boolean menuVisible(Player player, ResourceLocation id) {
+        if (!TensuraServerConfig.HIDE_UNLEARNED_IN_MENU.get()) {
+            return true; // pack lists every art (the never-guess read relaxed)
+        }
         if (AbilityUnlocks.isLearned(player, id).orElse(Boolean.TRUE)) {
             // Owner's resistance rule: a resistance lists only once
-            // trained - instance present with mastery above zero; the
+            // trained - instance present with mastery above the floor; the
             // unknown (no-player) context never hides
             return player == null || !isResistance(id)
                     || SkillAPI.getSkillsFrom(player).getSkill(id)
-                            .map(instance -> instance.getMastery() > 0)
+                            .map(instance -> instance.getMastery()
+                                    > TensuraServerConfig.RESISTANCE_MIN_MASTERY.get())
                             .orElse(false);
         }
-        // Clause two: ARR-known with mastery > 0 - the instance's own
-        // progression read (a known art with zero mastery never surfaces)
+        // Clause two: ARR-known with mastery above the floor - the
+        // instance's own progression read (a known art below the floor
+        // never surfaces)
         return SkillAPI.getSkillsFrom(player).getSkill(id)
-                .map(instance -> instance.getMastery() > 0)
+                .map(instance -> instance.getMastery()
+                        > TensuraServerConfig.KNOWN_MIN_MASTERY.get())
                 .orElse(false);
     }
 

@@ -9,6 +9,7 @@ import org.bitwisemadness.abilitycore.api.AbilityPresentation;
 import org.bitwisemadness.abilitycore.api.PresentationField;
 import org.bitwisemadness.abilitycore.api.PresentationProviders;
 import org.bitwisemadness.abilitycore.api.Toggle;
+import org.bitwisemadness.abilitytensura.config.TensuraClientConfig;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -60,8 +61,10 @@ public final class TensuraPresentations {
         if (instance == null) {
             // Unlearned but ours (the owner's known-from-start rule lists
             // e.g. every resistance from ARR's start): present Known.
-            return new AbilityPresentation(null,
-                    List.of(PresentationField.text(STATUS_LABEL, "Known")));
+            return TensuraClientConfig.SHOW_STATUS.get()
+                    ? new AbilityPresentation(null,
+                            List.of(PresentationField.text(STATUS_LABEL, "Known")))
+                    : base();
         }
         return new AbilityPresentation(toggleFor(player, instance),
                 statusAndMastery(instance));
@@ -71,13 +74,20 @@ public final class TensuraPresentations {
      * Status first - Known/Learned/Mastered is ARR's own distinction
      * (owner's brief) - then mastery when ARR exposes a usable maximum.
      * Values follow masteryText's precedent: raw display strings, never
-     * guessed (the fraction helper abstains the same way).
+     * guessed (the fraction helper abstains the same way). Either field
+     * can be switched off ({@code menu.showStatus} / {@code
+     * menu.showMastery}); with both off the row shows only the toggle.
      */
     static List<PresentationField> statusAndMastery(ManasSkillInstance instance) {
         float fraction = masteryFraction(instance.getMastery(), instance.getMaxMastery());
         PresentationField status = PresentationField.text(STATUS_LABEL,
                 fraction >= 1f ? "Mastered" : "Learned");
-        List<PresentationField> mastery = masteryFields(instance);
+        List<PresentationField> mastery = TensuraClientConfig.SHOW_MASTERY.get()
+                ? masteryFields(instance)
+                : List.of();
+        if (!TensuraClientConfig.SHOW_STATUS.get()) {
+            return mastery;
+        }
         return mastery.isEmpty() ? List.of(status) : List.of(status, mastery.get(0));
     }
 
