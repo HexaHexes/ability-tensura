@@ -25,6 +25,7 @@ import org.bitwisemadness.abilitycore.api.AvailabilityState;
 import org.bitwisemadness.abilitycore.api.Metric;
 import org.bitwisemadness.abilitycore.api.VisibilityHandlers;
 import org.bitwisemadness.abilitycore.discovery.AbilityDiscovery;
+import org.bitwisemadness.abilitytensura.activation.TensuraActivation;
 import org.bitwisemadness.abilitytensura.config.TensuraServerConfig;
 
 /**
@@ -249,11 +250,15 @@ public final class UnlockGate {
                 .orElse(false);
     }
 
-    /** The display half: unknown metrics + the unlock verdict. */
+    /** The display half: the live cooldown sweep + the unlock verdict. */
     private static AbilityAvailability availabilityFor(Player player, ResourceLocation id) {
         boolean learned = player != null && isLearned(player, id);
         return new AbilityAvailability(
-                Metric.unknown(),
+                // owner's brief: cooldowns show, keyed per ABILITY (every
+                // slot of this art reads the same answer) - ARR's own
+                // ready/cooling semantics, unknown when not slotted
+                player == null ? Metric.unknown()
+                        : TensuraActivation.cooldownMetric(player, id),
                 Metric.unknown(),
                 learned
                         ? AvailabilityState.available()
