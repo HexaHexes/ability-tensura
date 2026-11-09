@@ -98,6 +98,28 @@ public final class TensuraActivation {
 
     private static final Logger LOGGER = LogUtils.getLogger();
 
+    /**
+     * The projection every cycleable art registers (core#113 + #133):
+     * the ability-wide read answers display fills, and the slot-scoped
+     * read answers a mode cycle storing the slot it stepped - so two
+     * slots holding the same art keep their own modes (owner: each slot
+     * sets its mode). A lambda cannot carry the second shape, hence the
+     * anonymous class.
+     */
+    private static final ModeOwners.NativeProjection PER_SLOT_PROJECTION =
+            new ModeOwners.NativeProjection() {
+                @Override
+                public Optional<String> modeId(ServerPlayer player, ResourceLocation abilityId) {
+                    return modeProjection(player, abilityId);
+                }
+
+                @Override
+                public Optional<String> modeId(ServerPlayer player, ResourceLocation abilityId,
+                        int slot) {
+                    return modeProjectionAt(player, abilityId, slot);
+                }
+            };
+
     private TensuraActivation() {
     }
 
@@ -121,11 +143,11 @@ public final class TensuraActivation {
             // intent here and ARR's native body moves the mode - no second
             // mode logic exists in this repo.
             ModeChangeHandlers.register(id, TensuraActivation::changeMode);
-            // The mode vocabulary + live projection (core#113): what
-            // hotbar#29's resolver validates stored modes against and what
-            // the mode keybind cycles/displays (single-mode arts declare none).
+            // The mode vocabulary + projection (core#113/#133): the
+            // resolver's declared cycle, then both read shapes - wide
+            // for display fills, slot-scoped for a cycle's own slot
             if (declareModes(id)) {
-                ModeOwners.declareNative(id, TensuraActivation::modeProjection);
+                ModeOwners.declareNative(id, PER_SLOT_PROJECTION);
             }
         }
     }
@@ -171,7 +193,9 @@ public final class TensuraActivation {
         // ARR preset (the tail - native presets untouched) and mirrors the
         // bar's slots in first; unmapped bars keep ARR's active preset
         mapBarToPreset(player, activeBarId(player));
-        int[] slotAndMode = equippedSlot(player, instance, 0);
+        // the intent's own slot first (owner: each slot sets its mode),
+        // then any slot holding the art, then the on-demand equip
+        int[] slotAndMode = equippedSlotAt(player, instance, request.slotContext(), 0);
         if (slotAndMode == null) {
             // No slot to act through: ARR's preset is full - the mirror
             // equips on demand but never displaces an occupied slot, and
@@ -216,7 +240,14 @@ public final class TensuraActivation {
             return 0L;
         }
         ManasSkillInstance instance = maybeInstance.get();
-        int[] slotAndMode = resolvePresetSlot(player, instance);
+        // The gate reads the same preset slot the activation will use
+        // (its own javadoc promise; ARR's cooldowns are per-mode): map
+        // the active bar, then the intent's own slot, then any holder.
+        mapBarToPreset(player, activeBarId(player));
+        int[] slotAndMode = resolvePresetSlotAt(player, instance, request.slotContext());
+        if (slotAndMode == null) {
+            slotAndMode = resolvePresetSlot(player, instance);
+        }
         if (slotAndMode == null) {
             return 0L;
         }
@@ -262,14 +293,18 @@ public final class TensuraActivation {
         // preset and mirror its slots, exactly like the activation path
         mapBarToPreset(player,
                 request.barId() == null ? activeBarId(player) : request.barId());
-        int[] slotAndMode = equippedSlot(player, instance, 0);
+        // ... and step THIS slot's own position (owner: each slot sets
+        // its mode): two slots holding the art cycle independently; an
+        // index the preset cannot name falls back to the ability-wide slot
+        int[] slotAndMode = equippedSlotAt(player, instance, request.slotContext(), 0);
         if (slotAndMode == null) {
             return refuseWithoutPresetSlot(player);
         }
         int before = slotAndMode[1];
         RequestAbilityModeChangePacket.changeModePacket(slotAndMode[0], false)
                 .changeMode(player);
-        int[] after = resolvePresetSlot(player, instance);
+        // re-read the very slot we cycled - never another slot's answer
+        int[] after = resolvePresetSlotAt(player, instance, slotAndMode[0]);
         if (after != null && after[1] != before) {
             return ActivationResult.ACTED;
         }
@@ -337,13 +372,40 @@ public final class TensuraActivation {
      * the index is out of range - never a guessed mode.
      */
     private static Optional<String> modeProjection(ServerPlayer player, ResourceLocation id) {
+        return modeIdFor(player, id, null);
+    }
+
+    /**
+     * The slot-scoped projection (core#133's per-slot read): the mode of
+     * <b>this slot's</b> preset position - the mirror maps bar slot i to
+     * preset slot i, so a mode cycle stores the slot it cycled instead of
+     * whichever slot holds the art first (owner: each slot sets its mode).
+     * A slot the preset cannot name falls back to the ability-wide
+     * answer, which is exactly what an activation from that slot acts
+     * through (the same positional-then-first rule), so the stored
+     * setting and the cast can never disagree. Empty = not held, not
+     * slotted, or an out-of-range mode index.
+     */
+    private static Optional<String> modeProjectionAt(ServerPlayer player, ResourceLocation id,
+            int slot) {
+        return modeIdFor(player, id, slot);
+    }
+
+    /** Shared body: a null slot reads the ability-wide question. */
+    private static Optional<String> modeIdFor(ServerPlayer player, ResourceLocation id,
+            @Nullable Integer slot) {
         Optional<ManasSkillInstance> maybeInstance =
                 SkillAPI.getSkillsFrom(player).getSkill(id);
         if (maybeInstance.isEmpty()) {
             return Optional.empty();
         }
         ManasSkillInstance instance = maybeInstance.get();
-        int[] slotAndMode = resolvePresetSlot(player, instance);
+        int[] slotAndMode = slot == null
+                ? resolvePresetSlot(player, instance)
+                : resolvePresetSlotAt(player, instance, slot);
+        if (slotAndMode == null) {
+            slotAndMode = resolvePresetSlot(player, instance);
+        }
         if (slotAndMode == null) {
             return Optional.empty();
         }
@@ -376,6 +438,35 @@ public final class TensuraActivation {
     }
 
     /**
+     * The active-preset slot at <b>exactly {@code index}</b> holding this
+     * instance's skill, as (slotIndex, mode), or null - positional
+     * because {@link #mirrorBarIntoPreset} maps bar slot i to preset slot
+     * i, so the intent's own slot names its own (skill, mode) pair (owner:
+     * each slot sets its mode). A negative or out-of-range index, a slot
+     * holding anything else, and unavailable storage all answer null -
+     * the caller falls back to {@link #resolvePresetSlot}, never guesses.
+     */
+    @Nullable
+    private static int[] resolvePresetSlotAt(ServerPlayer player, ManasSkillInstance instance,
+            int index) {
+        if (index < 0) {
+            return null;
+        }
+        IAbility ability = TensuraStorages.getAbilityFrom(player);
+        if (ability == null) {
+            return null;
+        }
+        List<AbilitySlot> slots = ability.getAbilitySlots();
+        if (index >= slots.size()) {
+            return null;
+        }
+        AbilitySlot slot = slots.get(index);
+        return slot.getSkill() == instance.getSkill()
+                ? new int[] {index, slot.getMode()}
+                : null;
+    }
+
+    /**
      * The preset slot this art acts through, <b>equipping on demand</b>
      * (the owner's cast directive): ARR's ACTIVATE_SKILL listener and its
      * native mode body both resolve through the active preset, so an art
@@ -405,6 +496,25 @@ public final class TensuraActivation {
             }
         }
         return null;
+    }
+
+    /**
+     * The preset slot an intent acts through, preferring the slot at
+     * {@code preferred} - the hotbar slot it came from, which the mirror
+     * maps positionally, so two slots holding the same art act through
+     * their <b>own</b> (skill, mode) pair (owner: each slot sets its
+     * mode) - then any slot already holding the art, then the on-demand
+     * equip at the first free slot (the cast directive above). Null only
+     * when the preset is full or storage is unavailable.
+     */
+    @Nullable
+    private static int[] equippedSlotAt(ServerPlayer player, ManasSkillInstance instance,
+            int preferred, int mode) {
+        int[] atPreferred = resolvePresetSlotAt(player, instance, preferred);
+        if (atPreferred != null) {
+            return atPreferred;
+        }
+        return equippedSlot(player, instance, mode);
     }
 
     /**
