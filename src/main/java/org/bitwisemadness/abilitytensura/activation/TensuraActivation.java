@@ -268,9 +268,10 @@ public final class TensuraActivation {
         }
         if (instance.onCoolDown(mode)
                 && !instance.canIgnoreCoolDown(player, mode)) {
-            // ARR's boolean is the verdict; the floor of 1 keeps an
-            // inconsistent tick read from waving a cooling skill through.
-            return Math.max(1L, instance.getCoolDown(mode));
+            // ARR counts in SECONDS (SkillStorage decrements once per 20
+            // ticks); core's handler contract is TICKS - the floor keeps
+            // an inconsistent read from waving a cooling skill through
+            return Math.max(20L, instance.getCoolDown(mode) * 20L);
         }
         return 0L;
     }
