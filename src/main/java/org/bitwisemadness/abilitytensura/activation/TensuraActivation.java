@@ -21,6 +21,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
 import net.neoforged.fml.ModList;
 import org.bitwisemadness.abilitycore.AbilityCore;
 import org.bitwisemadness.abilitycore.api.AbilityModes;
@@ -31,6 +32,7 @@ import org.bitwisemadness.abilitycore.api.ActivationSource;
 import org.bitwisemadness.abilitycore.api.ActivationType;
 import org.bitwisemadness.abilitycore.api.ChargingModel;
 import org.bitwisemadness.abilitycore.api.CooldownOwners;
+import org.bitwisemadness.abilitycore.api.Metric;
 import org.bitwisemadness.abilitycore.api.ModeChangeHandlers;
 import org.bitwisemadness.abilitycore.api.ModeChangeRequest;
 import org.bitwisemadness.abilitycore.api.ModeOwners;
@@ -429,11 +431,45 @@ public final class TensuraActivation {
     }
 
     /**
+     * The art's cooldown as the overlay's sweep - the owner's brief:
+     * cooldowns must show, and they are keyed <b>per ability</b>, so every
+     * slot of this art reads the same answer. ARR/manascore expose only
+     * the remaining ticks and a boolean (ARR's own HUD draws an icon, not
+     * a gradient - verified against the API), so the metric is ARR's own
+     * semantics: {@code 1.0} ready, {@code 0.0} cooling, for the resolved
+     * preset slot's mode - the same resolution the cooldown gate uses, so
+     * the sweep can never disagree with a refusal. Not held or not
+     * slotted answers <b>unknown</b>: no sweep is drawn, never a fake.
+     * Client-safe: the storage and the instance state are synced.
+     */
+    public static Metric<Double> cooldownMetric(Player player, ResourceLocation id) {
+        Optional<ManasSkillInstance> maybeInstance =
+                SkillAPI.getSkillsFrom(player).getSkill(id);
+        if (maybeInstance.isEmpty()) {
+            return Metric.unknown();
+        }
+        ManasSkillInstance instance = maybeInstance.get();
+        int[] slotAndMode = resolvePresetSlot(player, instance);
+        if (slotAndMode == null) {
+            return Metric.unknown(); // not slotted: unknown, never a fake sweep
+        }
+        int mode = slotAndMode[1];
+        if (mode < 0 || mode >= instance.getModes()) {
+            return Metric.unknown();
+        }
+        return Metric.known(instance.onCoolDown(mode) ? 0.0 : 1.0);
+    }
+
+    /**
      * The player's active-preset slot holding this instance's skill, as
      * (slotIndex, mode) - the exact pair Tensura's own listener validates;
      * null when the skill is not equipped (or storage is unavailable).
+     * Takes a {@code LivingEntity} because the display half reads it
+     * client-side too (the storage is synced - ARR's own screens render
+     * presets on the client).
      */
-    private static int[] resolvePresetSlot(ServerPlayer player, ManasSkillInstance instance) {
+    @Nullable
+    private static int[] resolvePresetSlot(LivingEntity player, ManasSkillInstance instance) {
         IAbility ability = TensuraStorages.getAbilityFrom(player);
         if (ability == null) {
             return null;
