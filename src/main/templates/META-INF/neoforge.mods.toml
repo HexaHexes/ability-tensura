@@ -65,6 +65,38 @@ versionRange = "[2.0.1.3,)"
 ordering = "AFTER"
 side = "BOTH"
 
+# ManasCore - required: AbilityTensuraEvents subscribes on the mod bus and
+# calls SkillAPI.getSkillRegistryKey() at every RegisterEvent with no gate,
+# so the catalog cannot register without it. The build stages ManasCore in
+# every dev/GameTest run (runtimeOnly in build.gradle), so the mandatory
+# dep does not break the test closure - the ability_core precedent above is
+# about seams that genuinely gate; this one does not.
+[[dependencies.${mod_id}]]
+modId = "manascore"
+type = "required"
+versionRange = "[4.0.0.2,)"
+ordering = "AFTER"
+side = "BOTH"
+
+# Ability Hotbar - optional: the unlock gate's assignment hygiene and the
+# menu tabs read the hotbar's public bar-state, every call site behind a
+# ModList.isLoaded("ability_hotbar") gate (REPO.md: soft hook, hotbar#120).
+[[dependencies.${mod_id}]]
+modId = "ability_hotbar"
+type = "optional"
+versionRange = "[1.0.0-alpha.92,)"
+ordering = "AFTER"
+side = "BOTH"
+
+# Tensura RPG System - optional: TrsMenuBridge only runs when both
+# tensuraevolution and ability_hotbar are present (isLoaded pair).
+[[dependencies.${mod_id}]]
+modId = "tensuraevolution"
+type = "optional"
+versionRange = "[0.0,)"
+ordering = "AFTER"
+side = "BOTH"
+
 # Add your mod's dependencies below. Use type = "optional" for anything the mod
 # works without, and gate the code that touches it (mixins, registrations) so it
 # no-ops when the dependency is absent.
