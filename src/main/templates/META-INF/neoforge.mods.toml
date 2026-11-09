@@ -31,13 +31,12 @@ config = "${mod_id}.mixins.json"
 [[dependencies.${mod_id}]]
 modId = "ability_core"
 type = "optional"
-# alpha.42 = what this builds and tests against (the floor names the gate;
-# the pack runs 42). The resource series reshaped AbilityDefinition's
-# canonical constructor at alpha.34/35/39 (costs list, strategy, amount
-# resolver) - only our test fixtures construct one, so the refresh is a
-# fixture-shape fix; main code (resource pairs) is unaffected. Additive
-# since: alpha.40 slot gate, 41 XP fix, 42 refund counterpart.
-versionRange = "[1.0.0-alpha.42,)"
+# 1.0.1-alpha.02 = the slot-scoped mode read (core#133): this mod's
+# per-slot projection override is only reachable through it, and a mode
+# cycle on an older core stores nothing (or, with hotbar current, has no
+# method to call). Additive since the 1.0.0-alpha.42 floor: slot gate,
+# XP fix, refund counterpart, resource series, mode-change bar id.
+versionRange = "[1.0.1-alpha.02,)"
 ordering = "AFTER"
 side = "BOTH"
 
