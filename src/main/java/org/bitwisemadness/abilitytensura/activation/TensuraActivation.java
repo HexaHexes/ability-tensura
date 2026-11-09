@@ -72,8 +72,9 @@ import org.slf4j.Logger;
  *       preset slot to act through, so the service <b>mirrors on demand</b>
  *       ({@link #equippedSlot}): first free slot of the active preset via
  *       ARR's own setter - the owner's cast directive, so a hotbar slot
- *       casts without ARR-side setup - and a full preset refuses rather
- *       than displacing an occupied slot.</li>
+ *       casts without ARR-side setup - and a full preset displaces the
+ *       acting slot instead of refusing: ARR holds three slots per
+ *       preset, our bars hold up to eighteen.</li>
  *   <li>ARR messages its own cooldown refusal (red chat line) - our
  *       handler reads the same state so core's pre-activation gate
  *       carries the matching outcome, no second messaging.</li>
@@ -81,7 +82,8 @@ import org.slf4j.Logger;
  *
  * <p>Fail-closed throughout (the direct-invocation precedent from
  * ability-iss): unlearned refuses RESTRICTED (defense in depth behind the
- * eligibility rule), a full preset refuses RESTRICTED with ARR's red
+ * eligibility rule), a preset that cannot be written (no storage, or
+ * on-demand equipping switched off) refuses RESTRICTED with ARR's red
  * action-bar line naming the reason (the domain messages, the pipeline
  * carries codes), stale preset mode refuses
  * UNAVAILABLE, cooldown refuses COOLDOWN through core's pre-activation
@@ -195,12 +197,13 @@ public final class TensuraActivation {
         // bar's slots in first; unmapped bars keep ARR's active preset
         mapBarToPreset(player, activeBarId(player));
         // the intent's own slot first (owner: each slot sets its mode),
-        // then any slot holding the art, then the on-demand equip
-        int[] slotAndMode = equippedSlotAt(player, instance, request.slotContext(), 0);
+        // then any holder, then the on-demand equip - which displaces a
+        // full preset rather than refusing (ARR holds three slots)
+        int[] slotAndMode = equippedSlotAt(player, instance, request.slotContext(),
+                storedModeIndexOf(player, activeBarId(player), id, request.slotContext()));
         if (slotAndMode == null) {
-            // No slot to act through: ARR's preset is full - the mirror
-            // equips on demand but never displaces an occupied slot, and
-            // the domain (this service) messages the reason.
+            // Only unreachable for an operator who turned on-demand
+            // equipping off: no storage at all still refuses here.
             return refuseWithoutPresetSlot(player);
         }
         int slot = slotAndMode[0];
@@ -249,10 +252,15 @@ public final class TensuraActivation {
         if (slotAndMode == null) {
             slotAndMode = resolvePresetSlot(player, instance);
         }
-        if (slotAndMode == null) {
-            return 0L;
+        int mode;
+        if (slotAndMode != null) {
+            mode = slotAndMode[1];
+        } else {
+            // not equipped yet (later bar slots act through a displacement):
+            // the slot's OWN stored mode still names ARR's per-mode cooldown
+            mode = storedModeIndexOf(player, activeBarId(player),
+                    request.abilityId(), request.slotContext());
         }
-        int mode = slotAndMode[1];
         if (mode < 0 || mode >= instance.getModes()) {
             return 0L;
         }
@@ -273,8 +281,9 @@ public final class TensuraActivation {
      * vetoes, same native messages, same zero-residue refusals. Not
      * learned refuses RESTRICTED before ARR runs, a skill with nothing
      * to step through refuses UNAVAILABLE before the mirror can equip it
-     * as residue, and a full preset refuses through
-     * {@link #refuseWithoutPresetSlot}; after the native body an
+     * as residue, and a preset that cannot be written (no storage, or
+     * equipping off) refuses through {@link #refuseWithoutPresetSlot};
+     * after the native body an
      * unchanged slot mode reports ARR's own veto - refused RESTRICTED,
      * never an invented reason. {@code alternative} stays false: the
      * plain native key semantics (the reverse direction needs transport
@@ -292,12 +301,13 @@ public final class TensuraActivation {
         }
         // the pill cycles against ITS bar (core#132): map that bar's
         // preset and mirror its slots, exactly like the activation path
-        mapBarToPreset(player,
-                request.barId() == null ? activeBarId(player) : request.barId());
+        ResourceLocation bar = request.barId() == null ? activeBarId(player) : request.barId();
+        mapBarToPreset(player, bar);
         // ... and step THIS slot's own position (owner: each slot sets
         // its mode): two slots holding the art cycle independently; an
         // index the preset cannot name falls back to the ability-wide slot
-        int[] slotAndMode = equippedSlotAt(player, instance, request.slotContext(), 0);
+        int[] slotAndMode = equippedSlotAt(player, instance, request.slotContext(),
+                storedModeIndexOf(player, bar, request.abilityId(), request.slotContext()));
         if (slotAndMode == null) {
             return refuseWithoutPresetSlot(player);
         }
@@ -474,12 +484,16 @@ public final class TensuraActivation {
      * slotted to our hotbar but not equipped there has no slot to act on.
      * The mirror places it in the first free slot of the active preset
      * (ARR's own setter plus its dirty idiom) and answers with that slot;
-     * an existing slot wins untouched, and a full preset (or absent
-     * storage) answers null - no slot invented, no occupied slot
-     * displaced.
+     * an existing slot wins untouched. <b>When the preset is full the
+     * slot at {@code preferred} (the acting bar slot, wrapped into the
+     * preset) is displaced instead of refusing</b> - ARR's presets hold
+     * three slots while our bars hold up to eighteen, so the owner's
+     * "preset full" message must never surface for our own bars (only an
+     * operator who turned {@code activation.autoEquipOnCast} off, or an
+     * absent storage, still refuses). No storage at all answers null.
      */
     private static int[] equippedSlot(
-            ServerPlayer player, ManasSkillInstance instance, int mode) {
+            ServerPlayer player, ManasSkillInstance instance, int preferred, int modeIndex) {
         int[] existing = resolvePresetSlot(player, instance);
         if (existing != null) {
             return existing;
@@ -495,12 +509,46 @@ public final class TensuraActivation {
         List<AbilitySlot> slots = ability.getAbilitySlots();
         for (int i = 0; i < slots.size(); i++) {
             if (slots.get(i).isEmpty()) {
+                int mode = modeFor(modeIndex, slots.get(i));
                 ability.setAbilitySlot(ability.getActivePreset(), i, instance.getSkill(), mode);
                 ability.markDirty();
                 return new int[] {i, mode};
             }
         }
-        return null;
+        // full: displace the acting bar slot's own position (wrapped),
+        // carrying that slot's stored mode - never a refusal message
+        int slot = preferred >= 0 ? preferred % slots.size() : 0;
+        int mode = modeFor(modeIndex, slots.get(slot));
+        ability.setAbilitySlot(ability.getActivePreset(), slot, instance.getSkill(), mode);
+        ability.markDirty();
+        return new int[] {slot, mode};
+    }
+
+    /** The stored mode index, or the slot's current one when there is none. */
+    private static int modeFor(int modeIndex, AbilitySlot slot) {
+        return modeIndex >= 0 ? modeIndex : slot.getMode();
+    }
+
+    /**
+     * The bar slot's stored mode as an ARR mode index, or -1 when the
+     * slot is not this ability's or stores none (owner: each slot sets
+     * its mode) - the value a displaced or freshly equipped slot must
+     * carry, resolved through the mirror's own {@link #modeIndexOf} rule.
+     */
+    private static int storedModeIndexOf(ServerPlayer player, @Nullable ResourceLocation bar,
+            ResourceLocation id, int slot) {
+        if (!hotbarLoaded() || slot < 0) {
+            return -1;
+        }
+        SlotAssignment[] row = player.getData(BarStateAttachments.BAR_STATE).assignmentsOf(bar);
+        if (row == null || slot >= row.length) {
+            return -1;
+        }
+        SlotAssignment assignment = row[slot];
+        if (assignment == null || !id.equals(assignment.abilityId())) {
+            return -1;
+        }
+        return modeIndexOf(id, assignment.mode(), -1);
     }
 
     /**
@@ -509,24 +557,27 @@ public final class TensuraActivation {
      * maps positionally, so two slots holding the same art act through
      * their <b>own</b> (skill, mode) pair (owner: each slot sets its
      * mode) - then any slot already holding the art, then the on-demand
-     * equip at the first free slot (the cast directive above). Null only
-     * when the preset is full or storage is unavailable.
+     * equip at the first free slot (the cast directive above), displacing
+     * the acting position when it is full. Null only when storage is
+     * unavailable or on-demand equipping is off.
      */
     @Nullable
     private static int[] equippedSlotAt(ServerPlayer player, ManasSkillInstance instance,
-            int preferred, int mode) {
+            int preferred, int modeIndex) {
         int[] atPreferred = resolvePresetSlotAt(player, instance, preferred);
         if (atPreferred != null) {
             return atPreferred;
         }
-        return equippedSlot(player, instance, mode);
+        return equippedSlot(player, instance, preferred, modeIndex);
     }
 
     /**
-     * The refusal when ARR's active preset has no room for the art (the
-     * mirror's only failure for a live player): ARR's own red action-bar
-     * line names the reason - its cooldown line's style - and the outcome
-     * stays RESTRICTED. The domain messages, the pipeline carries codes.
+     * The refusal when there is no slot to act through - now only an
+     * absent storage, or an operator who turned
+     * {@code activation.autoEquipOnCast} off (a <b>full</b> preset
+     * displaces instead, see {@link #equippedSlot}). The domain messages,
+     * the pipeline carries codes: ARR's own red action-bar line names the
+     * reason.
      */
     private static ActivationResult refuseWithoutPresetSlot(ServerPlayer player) {
         if (TensuraStorages.getAbilityFrom(player) != null) {
