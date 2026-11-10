@@ -77,4 +77,26 @@ class TensuraPresentationsTest {
         assertEquals("ability_tensura.menu.field.status", TensuraPresentations.STATUS_LABEL,
                 "Known/Learned/Mastered reads under our modid - owner's brief");
     }
+
+    @Test
+    void learningProgressRunsFromTheNegativeStartToAcquisition() {
+        assertEquals(0f, TensuraPresentations.learningProgress(-50, -50), 0.0001f,
+                "at the acquirement start the bar is empty");
+        assertEquals(0.1f, TensuraPresentations.learningProgress(-45, -50), 0.0001f,
+                "five of fifty earned points fills a tenth");
+        assertEquals(1f, TensuraPresentations.learningProgress(0, -50), 0.0001f,
+                "crossing zero completes acquisition");
+        assertEquals(-1f, TensuraPresentations.learningProgress(-5, 0),
+                "no negative start = no learning domain, never a guessed bar");
+    }
+
+    @Test
+    void learningTextFloorsEarnedPointsOverTheRequirement() {
+        assertEquals("12/50", TensuraPresentations.learningText(-38, -50),
+                "earned = mastery - (-requirement), floored");
+        assertEquals("0/50", TensuraPresentations.learningText(-50, -50),
+                "nothing earned yet");
+        assertEquals("50/50", TensuraPresentations.learningText(0, -50),
+                "acquisition completes the requirement");
+    }
 }

@@ -2,6 +2,7 @@ package org.bitwisemadness.abilitytensura.gate;
 
 import io.github.manasmods.manascore.skill.api.ManasSkillInstance;
 import io.github.manasmods.manascore.skill.api.SkillAPI;
+import io.github.manasmods.tensura.ability.TensuraSkill;
 import java.util.List;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Player;
@@ -66,8 +67,61 @@ public final class TensuraPresentations {
                             List.of(PresentationField.text(STATUS_LABEL, "Known")))
                     : base();
         }
+        if (instance.getMastery() < 0 && instance.getSkill() instanceof TensuraSkill learning) {
+            // Acquisition runs from -requirement to 0: the old clamp
+            // froze this counter at "0/N" while ARR said "closer to
+            // acquiring" (owner's report: the value never updated)
+            return new AbilityPresentation(toggleFor(player, instance),
+                    learningFields(player, instance, learning));
+        }
         return new AbilityPresentation(toggleFor(player, instance),
                 statusAndMastery(instance));
+    }
+
+    /**
+     * The learning presentation: ARR's own status word (not learned yet,
+     * so "Known") plus the acquisition counter the old clamp froze - the
+     * earned points over the requirement, as a 0..1 progress. Either
+     * field honours its {@code menu.show*} switch; both off = none.
+     */
+    static List<PresentationField> learningFields(Player player, ManasSkillInstance instance,
+            TensuraSkill skill) {
+        int acquirementStart = skill.getAcquirementMastery(player);
+        double mastery = instance.getMastery();
+        PresentationField status = TensuraClientConfig.SHOW_STATUS.get()
+                ? PresentationField.text(STATUS_LABEL, "Known")
+                : null;
+        PresentationField progress = null;
+        float fraction = learningProgress(mastery, acquirementStart);
+        if (TensuraClientConfig.SHOW_MASTERY.get() && fraction >= 0f) {
+            progress = PresentationField.progress(MASTERY_LABEL, fraction,
+                    learningText(mastery, acquirementStart));
+        }
+        if (status == null) {
+            return progress == null ? List.of() : List.of(progress);
+        }
+        return progress == null ? List.of(status) : List.of(status, progress);
+    }
+
+    /**
+     * Acquisition progress 0..1: the counter runs from the (negative)
+     * acquirement start up to 0, or -1 when there is no learning domain
+     * (never a guessed bar). Pure - the instance reads stay in
+     * {@link #present}.
+     */
+    static float learningProgress(double mastery, int acquirementStart) {
+        if (acquirementStart >= 0 || !Double.isFinite(mastery)) {
+            return -1f;
+        }
+        double required = -acquirementStart;
+        double earned = mastery - acquirementStart;
+        return (float) Math.max(0d, Math.min(1d, earned / required));
+    }
+
+    /** The learning value: earned over required, floored ("12/50"). */
+    static String learningText(double mastery, int acquirementStart) {
+        long earned = (long) Math.floor(mastery - acquirementStart);
+        return earned + "/" + (-acquirementStart);
     }
 
     /**
