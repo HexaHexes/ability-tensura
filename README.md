@@ -30,8 +30,10 @@ RPG pack.
   Tensura pays and regenerates aura and magicule itself, so this pack
   adds no regeneration either.
 - **Mastery** - every cataloged art opts into Ability Core's experience
-  system: a successful activation - bar cell, wheel or the native
-  keybind, each funnels exactly once - grants the configured XP
+  system: an art earns XP only once ARR's own system has **fully
+  mastered** it (the gain gate reads ARR's mastery live), and from then
+  on a successful activation - bar cell, wheel or the native keybind,
+  each funnels exactly once - grants the configured XP
   (`mastery.skillXpGain`, server config, read live at award time) and
   routes half of it to the art's category mastery through core's opt-in
   declarations. Packs retune the share or any spec field through core's

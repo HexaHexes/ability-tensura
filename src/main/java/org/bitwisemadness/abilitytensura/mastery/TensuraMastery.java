@@ -1,6 +1,8 @@
 package org.bitwisemadness.abilitytensura.mastery;
 
+import io.github.manasmods.manascore.skill.api.SkillAPI;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerPlayer;
 import org.bitwisemadness.abilitycore.api.AbilityDefinition;
 import org.bitwisemadness.abilitycore.api.MasteryDeclarations;
 import org.bitwisemadness.abilitycore.api.MasteryGainHandlers;
@@ -9,6 +11,7 @@ import org.bitwisemadness.abilitycore.api.MasteryTarget;
 import org.bitwisemadness.abilitycore.registry.AbilityRegistries;
 import org.bitwisemadness.abilitytensura.config.TensuraServerConfig;
 import org.bitwisemadness.abilitytensura.gate.UnlockGate;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * The mastery contract for the cataloged arts (ability-tensura's
@@ -72,13 +75,38 @@ public final class TensuraMastery {
     /**
      * Registers the config-live gain handler - called at common setup
      * (before any activation can award; names resolve at first use, so
-     * the order against {@link #declareAll} is free).
+     * the order against {@link #declareAll} is free). The handler is
+     * also the phase-3 mastery gate: a Tensura art earns core XP only
+     * once ARR's own system has fully mastered it - a gain of 0 is a
+     * grant core skips, on every funnel.
      */
     public static void registerGainHandler() {
         if (MasteryGainHandlers.has(GAIN_HANDLER)) {
             return;
         }
         MasteryGainHandlers.declare(GAIN_HANDLER,
-                (player, source, trigger) -> TensuraServerConfig.SKILL_XP_GAIN.get());
+                (player, source, trigger) -> mastered(player, source)
+                        ? TensuraServerConfig.SKILL_XP_GAIN.get() : 0.0);
+    }
+
+    /**
+     * Whether {@code player} has fully mastered {@code id} in ARR's own
+     * system - the owner's rule (core XP starts after Tensura mastery):
+     * the same read the menu's "Mastered" status answers with
+     * ({@code masteryFraction >= 1}) - mastery at or above a usable
+     * maximum. Unlearned arts, a null player, and skills ARR gives no
+     * maximum to answer false: an ARR abstention never becomes a silent
+     * yes.
+     */
+    private static boolean mastered(@Nullable ServerPlayer player, ResourceLocation id) {
+        if (player == null) {
+            return false;
+        }
+        var instance = SkillAPI.getSkillsFrom(player).getSkill(id).orElse(null);
+        if (instance == null) {
+            return false;
+        }
+        int maxMastery = instance.getMaxMastery();
+        return maxMastery > 0 && instance.getMastery() >= maxMastery;
     }
 }
