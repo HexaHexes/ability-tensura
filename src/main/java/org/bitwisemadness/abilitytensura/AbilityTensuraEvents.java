@@ -14,6 +14,7 @@ import org.bitwisemadness.abilitytensura.activation.TensuraActivation;
 import org.bitwisemadness.abilitytensura.catalog.BattlewillCatalog;
 import org.bitwisemadness.abilitytensura.catalog.TensuraAbilityCatalog;
 import org.bitwisemadness.abilitytensura.gate.UnlockGate;
+import org.bitwisemadness.abilitytensura.mastery.TensuraMastery;
 
 /**
  * The mod-bus listener half of Ability: Tensura. Routing is not spelled
@@ -60,18 +61,24 @@ public final class AbilityTensuraEvents {
         }
         BattlewillCatalog.register(registry);
         TensuraAbilityCatalog.register(registry);
+        // The mastery declarations ride the same event (REQ-CORE-12): an
+        // art that is a menu ability is a mastery participant, id sets
+        // always aligned with the catalogs' own track() loop
+        TensuraMastery.declareAll();
     }
 
     /**
      * Registers the unlock gate and the activation handlers after every
      * catalog id is tracked (the registry phase completes before common
      * setup): eligibility rule, availability declarations, the
-     * REMOVE_SKILL listener, and one shared NATIVE handler per ability.
+     * REMOVE_SKILL listener, one shared NATIVE handler per ability, and
+     * the config-live mastery gain handler.
      */
     @SubscribeEvent
     public static void onCommonSetup(FMLCommonSetupEvent event) {
         UnlockGate.register();
         TensuraActivation.registerHandlers();
+        TensuraMastery.registerGainHandler();
     }
 
     /**
