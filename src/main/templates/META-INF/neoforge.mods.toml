@@ -33,16 +33,17 @@ modId = "ability_core"
 type = "optional"
 # alpha.01 of the 1.0.2 line is the floor: it is where the mastery
 # contract (REQ-CORE-12, core#137) ships, and this slice's declarations,
-# config-live gain handler and native-keybind award call into it;
-# alpha.02 (core#138's datapack mastery layer) is what this builds and
-# gametests against. It also carries everything the old 1.0.1-alpha.02
-# floor consumed (the slot-scoped mode read, core#133 - additive since
-# 1.0.0-alpha.42: slot gate, XP fix, resource series, mode-change bar
-# id). The floor turns the break history into a loud refusal: the
-# resource series reshaped AbilityDefinition at alpha.34/35 and each
-# break crashed older binaries at RegisterEvent (Tensura RPG,
-# 2026-11-06) - a pre-1.0.2 pack now fails the dependency check instead.
-versionRange = "[1.0.2-alpha.02,)"
+# config-live gain handler and native-keybind award call into it. The
+# pack should run alpha.03+: core#139 (the pipeline's toggle-channel
+# mastery skip) is consumed behavior for this mod's togglable arts -
+# below it, pane Enable/Disable spams grants. Everything the old
+# 1.0.1-alpha.02 floor consumed rides along (the slot-scoped mode read,
+# core#133 - additive since 1.0.0-alpha.42: slot gate, XP fix, resource
+# series, mode-change bar id). The floor turns the break history into a
+# loud refusal: the resource series reshaped AbilityDefinition at
+# alpha.34/35 and each break crashed older binaries at RegisterEvent
+# (Tensura RPG, 2026-11-06) - a pre-1.0.2 pack fails the check instead.
+versionRange = "[1.0.2-alpha.03,)"
 ordering = "AFTER"
 side = "BOTH"
 
