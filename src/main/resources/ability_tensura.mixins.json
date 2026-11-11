@@ -3,7 +3,9 @@
   "minVersion": "0.8",
   "package": "org.bitwisemadness.abilitytensura.mixin",
   "compatibilityLevel": "JAVA_21",
-  "mixins": [],
+  "mixins": [
+    "NativeSkillActivationAwardMixin"
+  ],
   "client": [],
   "server": [],
   "injectors": {

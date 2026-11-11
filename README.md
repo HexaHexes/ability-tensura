@@ -29,6 +29,15 @@ RPG pack.
   activation pipeline never charges or affordability-gates these arts -
   Tensura pays and regenerates aura and magicule itself, so this pack
   adds no regeneration either.
+- **Mastery** - every cataloged art opts into Ability Core's experience
+  system: a successful activation - bar cell, wheel or the native
+  keybind, each funnels exactly once - grants the configured XP
+  (`mastery.skillXpGain`, server config, read live at award time) and
+  routes half of it to the art's category mastery through core's opt-in
+  declarations. Packs retune the share or any spec field through core's
+  `mastery_spec` datapack overlay; the Enable/Disable control grants
+  nothing, and no effect axis is declared yet (ARR's cost reads are
+  uninvestigated upstream).
 - **Tensura RPG System menu** - with TRS installed, its equip-skills
   menu opens this pack's ability menu instead: one menu, no extra
   hotkey registered; without TRS, nothing changes.

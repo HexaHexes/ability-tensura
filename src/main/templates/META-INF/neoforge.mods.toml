@@ -31,12 +31,18 @@ config = "${mod_id}.mixins.json"
 [[dependencies.${mod_id}]]
 modId = "ability_core"
 type = "optional"
-# 1.0.1-alpha.02 = the slot-scoped mode read (core#133): this mod's
-# per-slot projection override is only reachable through it, and a mode
-# cycle on an older core stores nothing (or, with hotbar current, has no
-# method to call). Additive since the 1.0.0-alpha.42 floor: slot gate,
-# XP fix, refund counterpart, resource series, mode-change bar id.
-versionRange = "[1.0.1-alpha.02,)"
+# alpha.01 of the 1.0.2 line is the floor: it is where the mastery
+# contract (REQ-CORE-12, core#137) ships, and this slice's declarations,
+# config-live gain handler and native-keybind award call into it;
+# alpha.02 (core#138's datapack mastery layer) is what this builds and
+# gametests against. It also carries everything the old 1.0.1-alpha.02
+# floor consumed (the slot-scoped mode read, core#133 - additive since
+# 1.0.0-alpha.42: slot gate, XP fix, resource series, mode-change bar
+# id). The floor turns the break history into a loud refusal: the
+# resource series reshaped AbilityDefinition at alpha.34/35 and each
+# break crashed older binaries at RegisterEvent (Tensura RPG,
+# 2026-11-06) - a pre-1.0.2 pack now fails the dependency check instead.
+versionRange = "[1.0.2-alpha.02,)"
 ordering = "AFTER"
 side = "BOTH"
 

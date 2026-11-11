@@ -3,6 +3,7 @@ package org.bitwisemadness.abilitytensura.gametest;
 import com.mojang.authlib.GameProfile;
 import io.github.manasmods.manascore.skill.api.ManasSkill;
 import io.github.manasmods.manascore.skill.api.SkillAPI;
+import io.github.manasmods.manascore.skill.impl.network.c2s.RequestSkillActivationPacket;
 import io.github.manasmods.tensura.storage.TensuraStorages;
 import io.github.manasmods.tensura.storage.ability.IAbility;
 import io.github.manasmods.tensura.storage.ep.IExistence;
@@ -24,17 +25,24 @@ import org.bitwisemadness.abilitycore.api.ActivationSource;
 import org.bitwisemadness.abilitycore.api.AvailabilityProviders;
 import org.bitwisemadness.abilitycore.api.ChargingModel;
 import org.bitwisemadness.abilitycore.api.CooldownOwners;
+import org.bitwisemadness.abilitycore.api.MasteryDeclarations;
+import org.bitwisemadness.abilitycore.api.MasteryGainHandlers;
+import org.bitwisemadness.abilitycore.api.MasteryTarget;
+import org.bitwisemadness.abilitycore.api.MasteryTrigger;
 import org.bitwisemadness.abilitycore.api.ModeChangeHandlers;
 import org.bitwisemadness.abilitycore.api.ModeChangeRequest;
 import org.bitwisemadness.abilitycore.api.ModeOwners;
 import org.bitwisemadness.abilitycore.api.VisibilityHandlers;
 import org.bitwisemadness.abilitycore.discovery.AbilityDiscovery;
+import org.bitwisemadness.abilitycore.mastery.MasteryAttachments;
 import org.bitwisemadness.abilityhotbar.state.BarStateAttachments;
 import org.bitwisemadness.abilitytensura.AbilityTensura;
 import org.bitwisemadness.abilitytensura.activation.TensuraActivation;
 import org.bitwisemadness.abilitytensura.catalog.BattlewillCatalog;
 import org.bitwisemadness.abilitytensura.catalog.TensuraAbilityCatalog;
+import org.bitwisemadness.abilitytensura.config.TensuraServerConfig;
 import org.bitwisemadness.abilitytensura.gate.UnlockGate;
+import org.bitwisemadness.abilitytensura.mastery.TensuraMastery;
 
 /**
  * Boot and catalog coverage for the integration layer (#58): the mod loads,
@@ -620,5 +628,174 @@ public final class AbilityTensuraGameTests {
         check(UnlockGate.menuVisible(player, other),
                 "a learned non-resistance lists at zero mastery (unchanged rule)");
         helper.succeed();
+    }
+
+    /**
+     * The mastery declarations ride the catalog (REQ-CORE-12): every
+     * tracked art declares mastery with the config-live gain handler, the
+     * ACTIVATION trigger, no static base, and exactly one share - to the
+     * art's own definition category. No effect axis yet: ARR's costs are
+     * display descriptors and its reads are uninvestigated upstream.
+     */
+    @GameTest(template = "empty")
+    public static void skillMasteryDeclarationsFollowTheCatalog(GameTestHelper helper) {
+        var tracked = UnlockGate.trackedIds();
+        check(!tracked.isEmpty(), "the catalogs must track their arts");
+        var registry = org.bitwisemadness.abilitycore.registry.AbilityRegistries.registry();
+        if (registry == null) {
+            throw new net.minecraft.gametest.framework.GameTestAssertException(
+                    "core's ability registry must be live");
+        }
+        check(MasteryGainHandlers.has(TensuraMastery.GAIN_HANDLER),
+                "the config-live gain handler must be registered at setup");
+        double expectedGain = TensuraServerConfig.SKILL_XP_GAIN.get();
+        for (ResourceLocation id : tracked) {
+            check(MasteryDeclarations.has(id), "every tracked art declares mastery: " + id);
+            var spec = MasteryDeclarations.get(id).orElseThrow();
+            check(TensuraMastery.GAIN_HANDLER.equals(spec.gainHandler()),
+                    "the gain comes from the config-live handler: " + id);
+            check(spec.baseGain() == 0.0,
+                    "the static base is the handler's fail-closed fallback: " + id);
+            check(spec.triggers().equals(java.util.Set.of(MasteryTrigger.ACTIVATION)),
+                    "activations grant; nothing else is declared: " + id);
+            check(spec.effects().isEmpty(),
+                    "no effect axis until ARR's cost reads gain a caster-aware seam: " + id);
+            check(spec.shares().size() == 1, "exactly one share per art: " + id);
+            var share = spec.shares().iterator().next();
+            var definition = registry.get(id);
+            if (definition == null) {
+                throw new net.minecraft.gametest.framework.GameTestAssertException(
+                        "every tracked art has its definition: " + id);
+            }
+            check(share.target().key().equals(
+                            MasteryTarget.category(definition.category()).key()),
+                    "the share routes to the definition's category: " + id);
+            check(Math.abs(share.share() - TensuraMastery.CATEGORY_SHARE) < 1e-9,
+                    "the category share is the declared constant: " + id);
+        }
+        double answered = MasteryGainHandlers.get(TensuraMastery.GAIN_HANDLER).orElseThrow()
+                .gain(null, tracked.iterator().next(), MasteryTrigger.ACTIVATION);
+        check(Math.abs(answered - expectedGain) < 1e-9,
+                "the gain handler must answer the live config value, got " + answered);
+        helper.succeed();
+    }
+
+    /**
+     * The native keybind's award end-to-end (REQ-CORE-12): manascore's own
+     * activation packet drives the real startHoldSkill through the mixin's
+     * redirect - the one entry core's pipeline tail never sees - and the
+     * configured gain lands split between the art's own target and its
+     * definition category. The lambda the mixin targets is pinned first,
+     * so an upstream rename fails here instead of silently dropping awards.
+     */
+    @GameTest(template = "empty")
+    public static void nativeKeybindAwardsThroughThePacket(GameTestHelper helper) {
+        check(ModList.get().isLoaded("tensura"),
+                "Tensura must be staged for the native-keybind test");
+        check(nativeActivationTargetPresent(),
+                "manascore's activation lambda moved - retarget the mixin");
+        ServerPlayer player = mockPlayer(helper);
+        var data = MasteryAttachments.data(player);
+        check(data.entries().isEmpty(), "a fresh player starts with no mastery XP");
+        var registry = org.bitwisemadness.abilitycore.registry.AbilityRegistries.registry();
+        if (registry == null) {
+            throw new net.minecraft.gametest.framework.GameTestAssertException(
+                    "core's ability registry must be live");
+        }
+        String lastStage = "no candidate attempted";
+
+        for (ResourceLocation id : TensuraAbilityCatalog.expectedIds().stream().limit(8)
+                .toList()) {
+            ManasSkill skill = SkillAPI.getSkillRegistry().get(id);
+            if (skill == null) {
+                lastStage = "registry miss: " + id;
+                continue;
+            }
+            // the cast-chain recipe: possession, preset slot 0 mode 0, energy
+            SkillAPI.getSkillsFrom(player).updateSkill(skill.createDefaultInstance(), true);
+            var instance = SkillAPI.getSkillsFrom(player).getSkill(id).orElse(null);
+            if (instance == null) {
+                lastStage = "updateSkill did not register: " + id;
+                continue;
+            }
+            IAbility ability = TensuraStorages.getAbilityFrom(player);
+            if (ability == null) {
+                lastStage = "ability storage missing for a bare player";
+                continue;
+            }
+            ability.setAbilitySlot(ability.getActivePreset(), 0, skill, 0);
+            IExistence existence = TensuraStorages.getExistenceFrom(player);
+            if (existence == null) {
+                lastStage = "existence storage missing";
+                continue;
+            }
+            existence.setMagicule(EnergyHelper.getMaxMagicule(player));
+            existence.setAura(EnergyHelper.getMaxAura(player));
+
+            new RequestSkillActivationPacket(0, id, 0).handle(nativeContext(helper, player));
+            double own = data.xp(MasteryTarget.ability(id).key());
+            if (own <= 0.0) {
+                lastStage = "native activation granted nothing for " + id
+                        + " (learned=" + AbilityUnlocks.isLearned(player, id)
+                        + ", modes=" + instance.getModes() + ")";
+                continue;
+            }
+            // the configured gain split by the definition-category share
+            double gain = TensuraServerConfig.SKILL_XP_GAIN.get();
+            double expectedOwn = gain * (1.0 - TensuraMastery.CATEGORY_SHARE);
+            var definition = registry.get(id);
+            if (definition == null) {
+                throw new net.minecraft.gametest.framework.GameTestAssertException(
+                        "the granted art must resolve to a definition: " + id);
+            }
+            double routed = data.xp(MasteryTarget.category(definition.category()).key());
+            check(Math.abs(own - expectedOwn) < 1e-9,
+                    "the mixin awards the configured gain (self part), got " + own);
+            check(Math.abs(routed - gain * TensuraMastery.CATEGORY_SHARE) < 1e-9,
+                    "the category receives its share, got " + routed);
+            helper.succeed();
+            return;
+        }
+        check(false, "no native keybind activation granted mastery; last stage: "
+                + lastStage);
+    }
+
+    /** The mixin's target: manascore's queued packet body (a rename must fail here). */
+    private static boolean nativeActivationTargetPresent() {
+        try {
+            Class.forName("io.github.manasmods.manascore.skill.impl.network.c2s"
+                            + ".RequestSkillActivationPacket")
+                    .getDeclaredMethod("lambda$handle$0",
+                            dev.architectury.networking.NetworkManager.PacketContext.class);
+            return true;
+        } catch (ReflectiveOperationException absent) {
+            return false;
+        }
+    }
+
+    /** The native packet's server context: same thread, the queue runs inline. */
+    private static dev.architectury.networking.NetworkManager.PacketContext nativeContext(
+            GameTestHelper helper, ServerPlayer player) {
+        return new dev.architectury.networking.NetworkManager.PacketContext() {
+            @Override
+            public net.minecraft.world.entity.player.Player getPlayer() {
+                return player;
+            }
+
+            @Override
+            public void queue(Runnable task) {
+                task.run();
+            }
+
+            @Override
+            public dev.architectury.utils.Env getEnvironment() {
+                return dev.architectury.utils.Env.SERVER;
+            }
+
+            @Override
+            public net.minecraft.core.RegistryAccess registryAccess() {
+                return helper.getLevel().registryAccess();
+            }
+        };
     }
 }

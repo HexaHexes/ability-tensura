@@ -62,6 +62,14 @@ public final class TensuraServerConfig {
                             + "placed in the first free slot (a full preset refuses)")
                     .define("activation.autoEquipOnCast", true);
 
+    /** XP one successful activation grants (read live at award time). */
+    public static final ModConfigSpec.DoubleValue SKILL_XP_GAIN =
+            BUILDER.comment("XP one successful activation grants (read live when the award "
+                            + "lands, never at registration): half routes to the art's "
+                            + "category mastery - packs retune the share or any other spec "
+                            + "field through core's mastery_spec datapack overlay")
+                    .defineInRange("mastery.skillXpGain", 10.0, 0.0, 1000000.0);
+
     public static final ModConfigSpec SPEC = BUILDER.build();
 
     /** The bar-to-preset mapping policy (rendered by name in a config screen). */
