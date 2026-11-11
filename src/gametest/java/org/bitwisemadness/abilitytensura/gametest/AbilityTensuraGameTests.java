@@ -2,6 +2,7 @@ package org.bitwisemadness.abilitytensura.gametest;
 
 import com.mojang.authlib.GameProfile;
 import io.github.manasmods.manascore.skill.api.ManasSkill;
+import io.github.manasmods.manascore.skill.api.ManasSkillInstance;
 import io.github.manasmods.manascore.skill.api.SkillAPI;
 import io.github.manasmods.manascore.skill.impl.network.c2s.RequestSkillActivationPacket;
 import io.github.manasmods.tensura.storage.TensuraStorages;
@@ -673,10 +674,35 @@ public final class AbilityTensuraGameTests {
             check(Math.abs(share.share() - TensuraMastery.CATEGORY_SHARE) < 1e-9,
                     "the category share is the declared constant: " + id);
         }
-        double answered = MasteryGainHandlers.get(TensuraMastery.GAIN_HANDLER).orElseThrow()
+        // the phase-3 gate reads ARR mastery live: a null player is
+        // never mastered, so the handler answers 0 (core skips it)
+        double unmastered = MasteryGainHandlers.get(TensuraMastery.GAIN_HANDLER).orElseThrow()
                 .gain(null, tracked.iterator().next(), MasteryTrigger.ACTIVATION);
-        check(Math.abs(answered - expectedGain) < 1e-9,
-                "the gain handler must answer the live config value, got " + answered);
+        check(unmastered == 0.0,
+                "an unmastered (null) player must earn nothing, got " + unmastered);
+        // ... while a mastered mock player gets the live config value
+        ServerPlayer masteredPlayer = mockPlayer(helper);
+        ResourceLocation sample = null;
+        for (ResourceLocation candidate : tracked) {
+            ManasSkill skill = SkillAPI.getSkillRegistry().get(candidate);
+            if (skill == null) {
+                continue;
+            }
+            SkillAPI.getSkillsFrom(masteredPlayer)
+                    .updateSkill(skill.createDefaultInstance(), true);
+            var held = SkillAPI.getSkillsFrom(masteredPlayer).getSkill(candidate).orElse(null);
+            if (held != null && held.getMaxMastery() > 0) {
+                held.setMastery(held.getMaxMastery());
+                sample = candidate;
+                break;
+            }
+        }
+        check(sample != null,
+                "no cataloged art exposes a usable ARR maximum to master against");
+        double masteredGain = MasteryGainHandlers.get(TensuraMastery.GAIN_HANDLER).orElseThrow()
+                .gain(masteredPlayer, sample, MasteryTrigger.ACTIVATION);
+        check(Math.abs(masteredGain - expectedGain) < 1e-9,
+                "a mastered art must answer the live config value, got " + masteredGain);
         helper.succeed();
     }
 
@@ -718,6 +744,13 @@ public final class AbilityTensuraGameTests {
                 lastStage = "updateSkill did not register: " + id;
                 continue;
             }
+            if (instance.getMaxMastery() <= 0) {
+                lastStage = "no usable ARR maximum to master for " + id;
+                continue;
+            }
+            // the phase-3 gate: core XP starts only after ARR's own
+            // system has fully mastered the art
+            instance.setMastery(instance.getMaxMastery());
             IAbility ability = TensuraStorages.getAbilityFrom(player);
             if (ability == null) {
                 lastStage = "ability storage missing for a bare player";
@@ -797,5 +830,63 @@ public final class AbilityTensuraGameTests {
                 return helper.getLevel().registryAccess();
             }
         };
+    }
+
+    /**
+     * The phase-3 mastery gate (the owner's rule): a Tensura art earns
+     * core XP only after ARR's own system has fully mastered it. The
+     * config-live gain handler answers 0 while the art is unmastered (a
+     * grant core skips), the live config value once mastery reaches
+     * ARR's maximum, and 0 again for an art the player does not hold.
+     */
+    @GameTest(template = "empty")
+    public static void tensuraMasteryGateOpensOnlyWhenMastered(GameTestHelper helper) {
+        var ids = TensuraAbilityCatalog.expectedIds();
+        check(!ids.isEmpty(), "the catalog must stage its arts");
+        ServerPlayer player = mockPlayer(helper);
+        var handler = MasteryGainHandlers.get(TensuraMastery.GAIN_HANDLER).orElseThrow();
+        double expectedGain = TensuraServerConfig.SKILL_XP_GAIN.get();
+
+        // hold an art ARR gives a usable maximum to (the walk's rule)
+        ManasSkillInstance masterable = null;
+        ResourceLocation masterableId = null;
+        for (ResourceLocation candidate : ids) {
+            ManasSkill skill = SkillAPI.getSkillRegistry().get(candidate);
+            if (skill == null) {
+                continue;
+            }
+            SkillAPI.getSkillsFrom(player).updateSkill(skill.createDefaultInstance(), true);
+            var held = SkillAPI.getSkillsFrom(player).getSkill(candidate).orElse(null);
+            if (held != null && held.getMaxMastery() > 0) {
+                masterable = held;
+                masterableId = candidate;
+                break;
+            }
+        }
+        if (masterable == null || masterableId == null) {
+            throw new net.minecraft.gametest.framework.GameTestAssertException(
+                    "no cataloged art exposes a usable ARR maximum to master against");
+        }
+
+        // the fresh default instance starts unmastered: no XP
+        double unmastered = handler.gain(player, masterableId, MasteryTrigger.ACTIVATION);
+        check(unmastered == 0.0, "an unmastered art must earn nothing, got " + unmastered);
+
+        // ARR mastery at the maximum opens the gate: the live config value
+        masterable.setMastery(masterable.getMaxMastery());
+        double mastered = handler.gain(player, masterableId, MasteryTrigger.ACTIVATION);
+        check(Math.abs(mastered - expectedGain) < 1e-9,
+                "a mastered art must earn the live config value, got " + mastered);
+
+        // an art the player does not hold earns nothing either
+        ResourceLocation unheld = ids.stream()
+                .filter(candidate -> SkillAPI.getSkillsFrom(player)
+                        .getSkill(candidate).isEmpty())
+                .findFirst().orElse(null);
+        if (unheld != null) {
+            double heldNothing = handler.gain(player, unheld, MasteryTrigger.ACTIVATION);
+            check(heldNothing == 0.0, "an unheld art must earn nothing, got " + heldNothing);
+        }
+        helper.succeed();
     }
 }
