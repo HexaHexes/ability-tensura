@@ -5,6 +5,7 @@ import io.github.manasmods.manascore.skill.api.ManasSkill;
 import io.github.manasmods.manascore.skill.api.ManasSkillInstance;
 import io.github.manasmods.manascore.skill.api.SkillAPI;
 import io.github.manasmods.manascore.skill.impl.network.c2s.RequestSkillActivationPacket;
+import io.github.manasmods.tensura.damage.TensuraDamageSource;
 import io.github.manasmods.tensura.storage.TensuraStorages;
 import io.github.manasmods.tensura.storage.ability.IAbility;
 import io.github.manasmods.tensura.storage.ep.IExistence;
@@ -14,7 +15,10 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ClientInformation;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.damagesource.DamageSource;
 import net.neoforged.fml.ModList;
+import net.neoforged.neoforge.common.damagesource.DamageContainer;
+import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 import org.bitwisemadness.abilitycore.AbilityCore;
@@ -28,6 +32,7 @@ import org.bitwisemadness.abilitycore.api.ChargingModel;
 import org.bitwisemadness.abilitycore.api.CooldownOwners;
 import org.bitwisemadness.abilitycore.api.MasteryAxis;
 import org.bitwisemadness.abilitycore.api.MasteryDeclarations;
+import org.bitwisemadness.abilitycore.api.MasteryEffects;
 import org.bitwisemadness.abilitycore.api.MasteryGainHandlers;
 import org.bitwisemadness.abilitycore.api.MasteryTarget;
 import org.bitwisemadness.abilitycore.api.MasteryTrigger;
@@ -666,10 +671,12 @@ public final class AbilityTensuraGameTests {
                     instanceof io.github.manasmods.tensura.ability.magic.Magic;
             check(spec.effects().containsKey(MasteryAxis.COST),
                     "every art carries the COST axis: " + id);
+            check(spec.effects().containsKey(MasteryAxis.POWER),
+                    "every art carries the POWER axis: " + id);
             check(spec.effects().containsKey(MasteryAxis.CAST_TIME) == isMagic,
                     "CAST_TIME only where a cast time exists: " + id);
-            check(spec.effects().size() == (isMagic ? 2 : 1),
-                    "nothing beyond COST (+ CAST_TIME for magic) applies: " + id);
+            check(spec.effects().size() == (isMagic ? 3 : 2),
+                    "nothing beyond COST+POWER (+ CAST_TIME for magic): " + id);
             check(spec.shares().size() == 1, "exactly one share per art: " + id);
             var share = spec.shares().iterator().next();
             var definition = registry.get(id);
@@ -916,6 +923,51 @@ public final class AbilityTensuraGameTests {
         check(spec != null && spec.effects()
                         .containsKey(org.bitwisemadness.abilitycore.api.MasteryAxis.COST),
                 "declareAll must ship the COST axis, got " + spec);
+        helper.succeed();
+    }
+
+    /**
+     * The POWER axis scales ability damage (issue #111 step 4): ARR tags
+     * its damage sources with the ability instance, so a posted
+     * LivingIncomingDamageEvent scales for a ServerPlayer attacker - an
+     * untagged source stays untouched. The expected multiplier comes
+     * from core's own reader, so the fixture is table-agnostic.
+     */
+    @GameTest(template = "empty")
+    public static void powerAxisScalesTaggedAbilityDamage(GameTestHelper helper) {
+        var ids = TensuraAbilityCatalog.expectedIds();
+        check(!ids.isEmpty(), "the catalog must stage its arts");
+        var id = ids.iterator().next();
+        TensuraMastery.declareAll();
+        ServerPlayer player = mockPlayer(helper);
+        // a pool any sane curve/table prices above level 0 (the pinned
+        // core predates xpForLevel, so the fixture stays pin-agnostic)
+        MasteryAttachments.data(player)
+                .addXp(MasteryTarget.ability(id).key(), 1_000_000.0);
+        var skill = SkillAPI.getSkillRegistry().get(id);
+        if (skill == null) {
+            throw new net.minecraft.gametest.framework.GameTestAssertException(
+                    "the art resolves in ARR's registry: " + id);
+        }
+        var instance = skill.createDefaultInstance();
+        double expected = MasteryEffects.powerMultiplier(player, id);
+        check(expected > 1.0,
+                "the fixture pool must move the POWER multiplier, got " + expected);
+
+        DamageSource tagged = ((TensuraDamageSource) player.damageSources()
+                .playerAttack(player)).tensura$setAbilityInstance(instance);
+        var scaled = new LivingIncomingDamageEvent(player,
+                new DamageContainer(tagged, 10.0f));
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.post(scaled);
+        check(Math.abs(scaled.getAmount() - (float) (10.0 * expected)) < 1.0e-3f,
+                "tagged damage must scale by the POWER multiplier, got "
+                        + scaled.getAmount() + " expected " + (10.0 * expected));
+
+        var plain = new LivingIncomingDamageEvent(player,
+                new DamageContainer(player.damageSources().playerAttack(player), 10.0f));
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.post(plain);
+        check(Math.abs(plain.getAmount() - 10.0f) < 1.0e-6f,
+                "an untagged source stays untouched, got " + plain.getAmount());
         helper.succeed();
     }
 

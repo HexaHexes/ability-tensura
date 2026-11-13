@@ -71,8 +71,10 @@ public final class TensuraMastery {
                     .withShare(MasteryTarget.category(definition.category()),
                             CATEGORY_SHARE)
                     // the effect side (issue #111): COST rides the mixin'd
-                    // instance funnels - declared, never derived
-                    .withEffect(MasteryAxis.COST);
+                    // instance funnels; POWER rides the tagged damage
+                    // source - both declared, never derived
+                    .withEffect(MasteryAxis.COST)
+                    .withEffect(MasteryAxis.POWER);
             // CAST_TIME only where a cast time exists (issue #111 step 3):
             // the Magic base is the sole getCastingTime holder, and the
             // skill registry is live at this event (the timing gametest)
