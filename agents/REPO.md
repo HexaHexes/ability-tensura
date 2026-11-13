@@ -49,8 +49,23 @@ where custom behaviour demands it.
   hotbar classes, the unchecked half (`registerAll`) is the only link site -
   tests call it directly. Hooked at the end of `UnlockGate.register()`.
 
-**Test:** `./gradlew runGameTestServer` - `AbilityTensuraGameTests` (1 test). `expectedTests = 1`
+**Test:** `./gradlew runGameTestServer` - `AbilityTensuraGameTests` (15 tests). `expectedTests = 15`
 in `build.gradle` must match the `@GameTest` count.
+
+**Wiki descriptions** (owner's wiki pipeline, A + B):
+`scripts/generate-wiki-descriptions.ps1` regenerates
+`src/main/resources/assets/ability_tensura/wiki_descriptions.json` from
+tensura.wiki.gg - discovery starts at the Abilities page's Magics and
+Battlewills sub-pages, ids come from the MOD (ARR's jar for the three
+magic tags, `BattlewillCatalog.ART_PATHS` for battlewills - never from
+the wiki, whose icon/title signals disagree with the mod too often to
+trust alone), and each id joins to a page by title, then icon name, then
+the script's checked-in `$Overrides` table. The script pins the shipped
+shape (BOM, LF, ordinal keys, PS 5.1 value escaping), fails below its
+entry floor and lists any registered id no page covered.
+`.github/workflows/wiki-descriptions.yml` runs it weekly and opens a
+refresh PR when the prose changed; `WikiDescriptionsTest` pins the
+shipped shape in CI. Both refresh paths run the same script.
 
 **Gotchas**
 - **Data-driven does not mean arbitrary behaviour.** Datapacks carry metadata,

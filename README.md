@@ -13,6 +13,13 @@ RPG pack.
 - **Catalogs** - all 23 native battlewills plus the skill and magic
   catalog (332 native abilities from their category tags) registered as
   Ability Core definitions with discovery and metadata.
+- **Wiki descriptions** - the pane's description slot resolves in
+  order: the foxablaze wiki mod's key when it covers the art, the
+  bundled tensura.wiki.gg prose, then ARR's own lang key. The bundle
+  regenerates from the wiki with `scripts/generate-wiki-descriptions.ps1`
+  (ids from the mod, prose from the wiki) and refreshes weekly through
+  the Wiki Descriptions cron, so the magic and battlewill arts the wiki
+  mod never carried keep real prose without a manual curation.
 - **Unlock gate** - every registered ability is gated on the Tensura
   unlock (ManasCore's learned-state read), and unlearnt abilities are
   removed from the player's bars as they are forgotten.
