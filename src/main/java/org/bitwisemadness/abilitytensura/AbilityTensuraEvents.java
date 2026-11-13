@@ -1,14 +1,17 @@
 package org.bitwisemadness.abilitytensura;
 
 import io.github.manasmods.manascore.skill.api.SkillAPI;
+import io.github.manasmods.tensura.damage.TensuraDamageSource;
 import net.minecraft.core.Registry;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
+import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.registries.RegisterEvent;
 import org.bitwisemadness.abilitycore.api.AbilityDefinition;
+import org.bitwisemadness.abilitycore.api.MasteryEffects;
 import org.bitwisemadness.abilitycore.registry.AbilityRegistries;
 import org.bitwisemadness.abilitytensura.activation.TensuraActivation;
 import org.bitwisemadness.abilitytensura.catalog.BattlewillCatalog;
@@ -89,6 +92,39 @@ public final class AbilityTensuraEvents {
     public static void onPlayerLogin(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
             UnlockGate.reconcile(player);
+        }
+    }
+
+    /**
+     * The core POWER axis on ARR's damage (issue #111 step 4): ARR tags
+     * every ability damage source with its instance ({@code createSource
+     * -> tensura$setAbilityInstance}), so the exact skill resolves from
+     * the source and the attacker from its entity - no guessing. Scales
+     * the incoming amount before armor; untagged sources and non-player
+     * attackers are untouched, and client contexts never match a
+     * ServerPlayer attacker (core effect reads are server truth). Composes
+     * on the COST-scaled snapshot rather than double-counting it: COST
+     * moves the formula's cost input, POWER scales the result here.
+     */
+    @SubscribeEvent
+    public static void onIncomingDamage(LivingIncomingDamageEvent event) {
+        if (!(event.getSource() instanceof TensuraDamageSource tensura)) {
+            return;
+        }
+        var instance = tensura.tensura$getAbilityInstance();
+        if (instance == null) {
+            return;
+        }
+        var attacker = event.getSource().getEntity();
+        if (!(attacker instanceof ServerPlayer)) {
+            attacker = event.getSource().getDirectEntity();
+        }
+        if (!(attacker instanceof ServerPlayer player)) {
+            return;
+        }
+        double multiplier = MasteryEffects.powerMultiplier(player, instance.getSkillId());
+        if (multiplier != 1.0 && event.getAmount() > 0.0f) {
+            event.setAmount(event.getAmount() * (float) multiplier);
         }
     }
 }
