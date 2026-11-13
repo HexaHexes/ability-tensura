@@ -636,9 +636,10 @@ public final class AbilityTensuraGameTests {
      * The mastery declarations ride the catalog (REQ-CORE-12): every
      * tracked art declares mastery with the config-live gain handler, the
      * ACTIVATION trigger, no static base, and exactly one share - to the
-     * art's own definition category. The COST axis ships with them (issue
-     * #111): the mixin'd instance cost funnel is the caster-aware seam the
-     * old "no effect axis yet" pin waited for, and nothing else applies.
+     * art's own definition category. The COST axis ships with all of them
+     * and CAST_TIME with the Magic ids only (issue #111 steps 1-3): the
+     * mixin'd funnels are the caster-aware seams those axes read through,
+     * and nothing else applies.
      */
     @GameTest(template = "empty")
     public static void skillMasteryDeclarationsFollowTheCatalog(GameTestHelper helper) {
@@ -661,9 +662,14 @@ public final class AbilityTensuraGameTests {
                     "the static base is the handler's fail-closed fallback: " + id);
             check(spec.triggers().equals(java.util.Set.of(MasteryTrigger.ACTIVATION)),
                     "activations grant; nothing else is declared: " + id);
-            check(spec.effects().size() == 1
-                            && spec.effects().containsKey(MasteryAxis.COST),
-                    "exactly the COST axis - the mixin'd funnel is the seam: " + id);
+            boolean isMagic = SkillAPI.getSkillRegistry().get(id)
+                    instanceof io.github.manasmods.tensura.ability.magic.Magic;
+            check(spec.effects().containsKey(MasteryAxis.COST),
+                    "every art carries the COST axis: " + id);
+            check(spec.effects().containsKey(MasteryAxis.CAST_TIME) == isMagic,
+                    "CAST_TIME only where a cast time exists: " + id);
+            check(spec.effects().size() == (isMagic ? 2 : 1),
+                    "nothing beyond COST (+ CAST_TIME for magic) applies: " + id);
             check(spec.shares().size() == 1, "exactly one share per art: " + id);
             var share = spec.shares().iterator().next();
             var definition = registry.get(id);
@@ -894,15 +900,15 @@ public final class AbilityTensuraGameTests {
     }
 
     /**
-     * The cost mixin's upstream shape (issue #111, step 2): both funnel
-     * methods must keep their exact signatures or the injection silently
-     * stops scaling, and every staged spec must carry the COST axis the
-     * mixin reads (undeclared = core answers 1.0 = inert).
+     * The effect mixins' upstream shape (issue #111, steps 2-3): all three
+     * funnel methods must keep their exact signatures or an injection
+     * silently stops scaling, and every staged spec must carry the COST
+     * axis the cost mixin reads (undeclared = core answers 1.0 = inert).
      */
     @GameTest(template = "empty")
     public static void masteryCostAxisPinsItsUpstream(GameTestHelper helper) {
-        check(costFunnelPresent(),
-                "ARR renamed a cost funnel the MasteryCostMultiplierMixin injects");
+        check(effectFunnelsPresent(),
+                "ARR renamed a funnel an effect MasteryCost/MasteryCastTime mixin injects");
         TensuraMastery.declareAll();
         var ids = TensuraAbilityCatalog.expectedIds();
         check(!ids.isEmpty(), "the catalog must stage its arts");
@@ -913,8 +919,8 @@ public final class AbilityTensuraGameTests {
         helper.succeed();
     }
 
-    /** The mixin's two targets on TensuraSkillInstance (a rename fails here). */
-    private static boolean costFunnelPresent() {
+    /** The mixins' targets on TensuraSkillInstance and Magic (a rename fails here). */
+    private static boolean effectFunnelsPresent() {
         try {
             io.github.manasmods.tensura.ability.TensuraSkillInstance.class
                     .getDeclaredMethod("getMagiculeCost",
@@ -922,6 +928,11 @@ public final class AbilityTensuraGameTests {
             io.github.manasmods.tensura.ability.TensuraSkillInstance.class
                     .getDeclaredMethod("getAuraCost",
                             net.minecraft.world.entity.LivingEntity.class, int.class);
+            io.github.manasmods.tensura.ability.magic.Magic.class
+                    .getDeclaredMethod("getCastingTime",
+                            ManasSkillInstance.class,
+                            net.minecraft.world.entity.LivingEntity.class,
+                            int.class, boolean.class);
             return true;
         } catch (ReflectiveOperationException absent) {
             return false;
