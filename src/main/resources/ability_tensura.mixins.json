@@ -6,6 +6,7 @@
   "mixins": [
     "NativeSkillActivationAwardMixin",
     "MasteryCostMultiplierMixin",
+    "MasteryCostEntryMixin",
     "MasteryCastTimeMultiplierMixin"
   ],
   "client": [],
