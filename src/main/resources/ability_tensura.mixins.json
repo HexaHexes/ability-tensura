@@ -4,7 +4,8 @@
   "package": "org.bitwisemadness.abilitytensura.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
-    "NativeSkillActivationAwardMixin"
+    "NativeSkillActivationAwardMixin",
+    "MasteryCostMultiplierMixin"
   ],
   "client": [],
   "server": [],

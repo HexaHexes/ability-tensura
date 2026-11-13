@@ -26,6 +26,7 @@ import org.bitwisemadness.abilitycore.api.ActivationSource;
 import org.bitwisemadness.abilitycore.api.AvailabilityProviders;
 import org.bitwisemadness.abilitycore.api.ChargingModel;
 import org.bitwisemadness.abilitycore.api.CooldownOwners;
+import org.bitwisemadness.abilitycore.api.MasteryAxis;
 import org.bitwisemadness.abilitycore.api.MasteryDeclarations;
 import org.bitwisemadness.abilitycore.api.MasteryGainHandlers;
 import org.bitwisemadness.abilitycore.api.MasteryTarget;
@@ -635,8 +636,9 @@ public final class AbilityTensuraGameTests {
      * The mastery declarations ride the catalog (REQ-CORE-12): every
      * tracked art declares mastery with the config-live gain handler, the
      * ACTIVATION trigger, no static base, and exactly one share - to the
-     * art's own definition category. No effect axis yet: ARR's costs are
-     * display descriptors and its reads are uninvestigated upstream.
+     * art's own definition category. The COST axis ships with them (issue
+     * #111): the mixin'd instance cost funnel is the caster-aware seam the
+     * old "no effect axis yet" pin waited for, and nothing else applies.
      */
     @GameTest(template = "empty")
     public static void skillMasteryDeclarationsFollowTheCatalog(GameTestHelper helper) {
@@ -659,8 +661,9 @@ public final class AbilityTensuraGameTests {
                     "the static base is the handler's fail-closed fallback: " + id);
             check(spec.triggers().equals(java.util.Set.of(MasteryTrigger.ACTIVATION)),
                     "activations grant; nothing else is declared: " + id);
-            check(spec.effects().isEmpty(),
-                    "no effect axis until ARR's cost reads gain a caster-aware seam: " + id);
+            check(spec.effects().size() == 1
+                            && spec.effects().containsKey(MasteryAxis.COST),
+                    "exactly the COST axis - the mixin'd funnel is the seam: " + id);
             check(spec.shares().size() == 1, "exactly one share per art: " + id);
             var share = spec.shares().iterator().next();
             var definition = registry.get(id);
@@ -888,5 +891,40 @@ public final class AbilityTensuraGameTests {
             check(heldNothing == 0.0, "an unheld art must earn nothing, got " + heldNothing);
         }
         helper.succeed();
+    }
+
+    /**
+     * The cost mixin's upstream shape (issue #111, step 2): both funnel
+     * methods must keep their exact signatures or the injection silently
+     * stops scaling, and every staged spec must carry the COST axis the
+     * mixin reads (undeclared = core answers 1.0 = inert).
+     */
+    @GameTest(template = "empty")
+    public static void masteryCostAxisPinsItsUpstream(GameTestHelper helper) {
+        check(costFunnelPresent(),
+                "ARR renamed a cost funnel the MasteryCostMultiplierMixin injects");
+        TensuraMastery.declareAll();
+        var ids = TensuraAbilityCatalog.expectedIds();
+        check(!ids.isEmpty(), "the catalog must stage its arts");
+        var spec = MasteryDeclarations.get(ids.iterator().next()).orElse(null);
+        check(spec != null && spec.effects()
+                        .containsKey(org.bitwisemadness.abilitycore.api.MasteryAxis.COST),
+                "declareAll must ship the COST axis, got " + spec);
+        helper.succeed();
+    }
+
+    /** The mixin's two targets on TensuraSkillInstance (a rename fails here). */
+    private static boolean costFunnelPresent() {
+        try {
+            io.github.manasmods.tensura.ability.TensuraSkillInstance.class
+                    .getDeclaredMethod("getMagiculeCost",
+                            net.minecraft.world.entity.LivingEntity.class, int.class);
+            io.github.manasmods.tensura.ability.TensuraSkillInstance.class
+                    .getDeclaredMethod("getAuraCost",
+                            net.minecraft.world.entity.LivingEntity.class, int.class);
+            return true;
+        } catch (ReflectiveOperationException absent) {
+            return false;
+        }
     }
 }
