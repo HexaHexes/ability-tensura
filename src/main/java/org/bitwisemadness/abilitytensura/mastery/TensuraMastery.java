@@ -1,6 +1,7 @@
 package org.bitwisemadness.abilitytensura.mastery;
 
 import io.github.manasmods.manascore.skill.api.SkillAPI;
+import io.github.manasmods.tensura.ability.magic.Magic;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import org.bitwisemadness.abilitycore.api.AbilityDefinition;
@@ -66,14 +67,19 @@ public final class TensuraMastery {
             if (definition == null) {
                 continue;
             }
-            MasteryDeclarations.declare(id,
-                    MasterySpec.gained(0.0).withGainHandler(GAIN_HANDLER)
-                            .withShare(MasteryTarget.category(definition.category()),
-                                    CATEGORY_SHARE)
-                            // the effect side (issue #111, step 1): COST
-                            // rides the runtime magicule/aura funnels the
-                            // mixin scales - declared, never derived
-                            .withEffect(MasteryAxis.COST));
+            MasterySpec spec = MasterySpec.gained(0.0).withGainHandler(GAIN_HANDLER)
+                    .withShare(MasteryTarget.category(definition.category()),
+                            CATEGORY_SHARE)
+                    // the effect side (issue #111): COST rides the mixin'd
+                    // instance funnels - declared, never derived
+                    .withEffect(MasteryAxis.COST);
+            // CAST_TIME only where a cast time exists (issue #111 step 3):
+            // the Magic base is the sole getCastingTime holder, and the
+            // skill registry is live at this event (the timing gametest)
+            if (SkillAPI.getSkillRegistry().get(id) instanceof Magic) {
+                spec = spec.withEffect(MasteryAxis.CAST_TIME);
+            }
+            MasteryDeclarations.declare(id, spec);
         }
     }
 

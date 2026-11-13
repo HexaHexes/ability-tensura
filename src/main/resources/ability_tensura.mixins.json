@@ -5,7 +5,8 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "NativeSkillActivationAwardMixin",
-    "MasteryCostMultiplierMixin"
+    "MasteryCostMultiplierMixin",
+    "MasteryCastTimeMultiplierMixin"
   ],
   "client": [],
   "server": [],
