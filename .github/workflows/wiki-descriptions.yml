@@ -1,0 +1,122 @@
+name: Wiki Descriptions
+
+# Refreshes the bundled tensura.wiki.gg ability descriptions (owner's
+# periodic-check brief): fetches the pages, regenerates the shipped
+# resource with the SAME generator a human runs
+# (scripts/generate-wiki-descriptions.ps1), and opens a PR when - and
+# only when - the prose actually changed. The bundled file stays every
+# reader's fallback; the PR ships through review and the usual release
+# flow, exactly like a hand-run refresh.
+#
+# The generator resolves every registered id against the wiki (title,
+# then icon name, then the checked-in overrides), fails below its
+# entry floor, and lists any id no page covered - so a markup change on
+# the wiki turns this cron RED instead of opening a PR that hollowed
+# out the pane.
+
+on:
+  schedule:
+    - cron: "30 6 * * 1" # Mondays 06:30 UTC (staggered beside iss's 06:00)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  # The no-BUMP_PR_TOKEN fallback runs `gh workflow run ci.yml --ref <branch>`;
+  # dispatching needs actions:write on the default token, or the step 403s
+  # (version-bump.yml's issue #94).
+  actions: write
+
+# Never cancelled - a branch pushed with no PR open is harder to clean up
+# than a slow run is to wait for (version-bump.yml's posture).
+concurrency:
+  group: wiki-descriptions
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: refresh-descriptions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          token: ${{ secrets.BUMP_PR_TOKEN || github.token }}
+
+      - name: Regenerate from tensura.wiki.gg
+        shell: pwsh
+        run: ./scripts/generate-wiki-descriptions.ps1
+
+      - name: Open the pull request when the prose changed
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.BUMP_PR_TOKEN || github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+
+          RESOURCE="src/main/resources/assets/ability_tensura/wiki_descriptions.json"
+          if git diff --quiet -- "$RESOURCE"; then
+            echo "Bundled descriptions already match the wiki."
+            exit 0
+          fi
+
+          BRANCH="wiki-descriptions/refresh"
+          git checkout -B "$BRANCH"
+          git add "$RESOURCE"
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]" \
+              commit -m "Refresh tensura.wiki.gg ability descriptions"
+          git push origin "$BRANCH" --force
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
+
+          if [ "$(gh pr list --state open --head "$BRANCH" --json number --jq 'length')" != "0" ]; then
+            echo "Existing refresh PR updated by the push."
+            exit 0
+          fi
+
+          cat > body.md <<'EOF'
+          ## Changeset
+
+          Automated refresh of the bundled tensura.wiki.gg ability
+          descriptions (the weekly cron - the same generator a hand-run
+          refresh uses).
+
+          The diff IS the review: every changed prose line is a wiki
+          edit since the last refresh, every added key is an id the
+          bridge now reaches, and a removed key never happens - the
+          generator joins against the mod's registered ids and fails
+          below its entry floor, so this PR can never ship a gutted
+          file. A markup change on the wiki turns the cron red instead.
+
+          ## Checklist
+
+          - [x] This PR contains **one** logical changeset
+          - [x] `./gradlew build` passes locally (this PR changes no code)
+          - [x] `./gradlew runGameTestServer` passes locally (unchanged suite)
+          EOF
+
+          URL=$(gh pr create --base "$DEFAULT_BRANCH" --head "$BRANCH" \
+            --title "Refresh tensura.wiki.gg ability descriptions" \
+            --body-file body.md)
+          echo "Opened $URL"
+
+      # GitHub runs no pull_request workflows for a PR the default
+      # GITHUB_TOKEN opened - and a default-token push to such a PR raises
+      # no synchronize event either (version-bump.yml's recursion guard).
+      # Dispatching CI on the branch reports the same job names, so the
+      # required checks still arrive.
+      - name: Run CI on the branch
+        if: steps.pr.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.BUMP_PR_TOKEN || github.token }}
+          BUMP_PR_TOKEN: ${{ secrets.BUMP_PR_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "${BUMP_PR_TOKEN:-}" ]; then
+            echo "Opened with BUMP_PR_TOKEN - its pull_request event runs CI normally."
+            exit 0
+          fi
+
+          echo "::warning::No BUMP_PR_TOKEN secret: dispatching ci.yml on wiki-descriptions/refresh instead."
+          gh workflow run ci.yml --ref wiki-descriptions/refresh
