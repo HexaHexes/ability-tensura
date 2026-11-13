@@ -4,6 +4,7 @@ import io.github.manasmods.manascore.skill.api.SkillAPI;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import org.bitwisemadness.abilitycore.api.AbilityDefinition;
+import org.bitwisemadness.abilitycore.api.MasteryAxis;
 import org.bitwisemadness.abilitycore.api.MasteryDeclarations;
 import org.bitwisemadness.abilitycore.api.MasteryGainHandlers;
 import org.bitwisemadness.abilitycore.api.MasterySpec;
@@ -68,7 +69,11 @@ public final class TensuraMastery {
             MasteryDeclarations.declare(id,
                     MasterySpec.gained(0.0).withGainHandler(GAIN_HANDLER)
                             .withShare(MasteryTarget.category(definition.category()),
-                                    CATEGORY_SHARE));
+                                    CATEGORY_SHARE)
+                            // the effect side (issue #111, step 1): COST
+                            // rides the runtime magicule/aura funnels the
+                            // mixin scales - declared, never derived
+                            .withEffect(MasteryAxis.COST));
         }
     }
 
