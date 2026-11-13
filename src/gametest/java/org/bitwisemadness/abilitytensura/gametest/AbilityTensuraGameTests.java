@@ -919,7 +919,7 @@ public final class AbilityTensuraGameTests {
         helper.succeed();
     }
 
-    /** The mixins' targets on TensuraSkillInstance and Magic (a rename fails here). */
+    /** The mixins' entry points (a rename fails here). */
     private static boolean effectFunnelsPresent() {
         try {
             io.github.manasmods.tensura.ability.TensuraSkillInstance.class
@@ -928,6 +928,15 @@ public final class AbilityTensuraGameTests {
             io.github.manasmods.tensura.ability.TensuraSkillInstance.class
                     .getDeclaredMethod("getAuraCost",
                             net.minecraft.world.entity.LivingEntity.class, int.class);
+            io.github.manasmods.tensura.ability.TensuraSkill.class
+                    .getDeclaredMethod("isOutOfEnergy",
+                            net.minecraft.world.entity.LivingEntity.class,
+                            ManasSkillInstance.class, int.class, float.class);
+            io.github.manasmods.tensura.ability.TensuraSkill.class
+                    .getDeclaredMethod("createSource",
+                            ManasSkillInstance.class,
+                            net.minecraft.world.entity.LivingEntity.class,
+                            net.minecraft.resources.ResourceKey.class, int.class);
             io.github.manasmods.tensura.ability.magic.Magic.class
                     .getDeclaredMethod("getCastingTime",
                             ManasSkillInstance.class,
