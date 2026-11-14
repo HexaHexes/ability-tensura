@@ -87,10 +87,13 @@ side = "BOTH"
 # Ability Hotbar - optional: the unlock gate's assignment hygiene and the
 # menu tabs read the hotbar's public bar-state, every call site behind a
 # ModList.isLoaded("ability_hotbar") gate (REPO.md: soft hook, hotbar#120).
+# Floor 1.0.1-alpha.23: MasteryLevelBonus - the Lv-badge seam this mod
+# declares its learned/mastered bonuses through (under it the class does
+# not exist and the guarded call site never links).
 [[dependencies.${mod_id}]]
 modId = "ability_hotbar"
 type = "optional"
-versionRange = "[1.0.0-alpha.92,)"
+versionRange = "[1.0.1-alpha.23,)"
 ordering = "AFTER"
 side = "BOTH"
 

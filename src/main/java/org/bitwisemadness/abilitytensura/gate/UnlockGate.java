@@ -25,8 +25,10 @@ import org.bitwisemadness.abilitycore.api.AvailabilityState;
 import org.bitwisemadness.abilitycore.api.Metric;
 import org.bitwisemadness.abilitycore.api.VisibilityHandlers;
 import org.bitwisemadness.abilitycore.discovery.AbilityDiscovery;
+import org.bitwisemadness.abilityhotbar.client.MasteryLevelBonus;
 import org.bitwisemadness.abilitytensura.activation.TensuraActivation;
 import org.bitwisemadness.abilitytensura.config.TensuraServerConfig;
+import org.bitwisemadness.abilitytensura.mastery.TensuraMastery;
 
 /**
  * The unlock gate (owner directive, 2026-11-06): <b>every ability this mod
@@ -121,6 +123,10 @@ public final class UnlockGate {
                 return Set.of();
             }
         });
+        // The Lv-badge seam (owner's brief: learned +1, mastered +2) is
+        // hotbar-typed - guarded like hotbar#120's callsite, so the
+        // hotbar-less boot never links the class
+        boolean hotbarPresent = ModList.get().isLoaded("ability_hotbar");
         for (ResourceLocation id : ids) {
             AvailabilityProviders.declare(id, UnlockGate::availabilityFor);
             // The read seam (core#117): consumers ask core, not upstream -
@@ -129,6 +135,9 @@ public final class UnlockGate {
             // Live menu presentations (ability-tensura#66): mastery + toggle,
             // same gating - without Tensura there is no state to present.
             TensuraPresentations.declare(id);
+            if (hotbarPresent) {
+                MasteryLevelBonus.declare(id, TensuraMastery::levelBonusFor);
+            }
             // Menu visibility (core#124): tensura's own rule - an art
             // lists only when unlocked; unknown never hides (the
             // never-guess read), so bugs degrade to today's listing.
