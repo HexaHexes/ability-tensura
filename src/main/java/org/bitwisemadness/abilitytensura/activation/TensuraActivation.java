@@ -24,6 +24,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.neoforged.fml.ModList;
 import org.bitwisemadness.abilitycore.AbilityCore;
+import org.bitwisemadness.abilitycore.activation.ActivationHandler;
 import org.bitwisemadness.abilitycore.api.AbilityModes;
 import org.bitwisemadness.abilitycore.api.ActivationOutcome;
 import org.bitwisemadness.abilitycore.api.ActivationRequest;
@@ -129,6 +130,25 @@ public final class TensuraActivation {
     }
 
     /**
+     * The NATIVE adapter as one declaration (core#159): core's registry
+     * stores a single {@link ActivationHandler} per id, so the key-up half
+     * must ride the same object as the press - a method reference would
+     * only ever implement {@code activate} and leave the default release
+     * answering ACTED for a hold that keeps running.
+     */
+    private static final ActivationHandler HANDLER = new ActivationHandler() {
+        @Override
+        public ActivationResult activate(ActivationRequest request, ServerPlayer player) {
+            return TensuraActivation.activate(request, player);
+        }
+
+        @Override
+        public ActivationResult release(ActivationRequest request, ServerPlayer player) {
+            return TensuraActivation.release(request, player);
+        }
+    };
+
+    /**
      * Registers one shared handler per tracked ability on core's pipeline
      * (NATIVE charging: ARR owns every cost). Gated on Tensura - the
      * classes in this file are upstream types.
@@ -138,8 +158,7 @@ public final class TensuraActivation {
             return;
         }
         for (ResourceLocation id : UnlockGate.trackedIds()) {
-            AbilityCore.HANDLERS.register(id, TensuraActivation::activate,
-                    ChargingModel.NATIVE);
+            AbilityCore.HANDLERS.register(id, HANDLER, ChargingModel.NATIVE);
             // Cooldown defers to ARR's own per-skill, per-mode window
             // (core's HANDLER contract, alpha.45): core gates with this
             // read, ARR stays the sole owner and start site of its state.
@@ -220,6 +239,45 @@ public final class TensuraActivation {
             // policy, energy) - the ability-iss precedent carries
             // UNAVAILABLE; core's refusal log records the detail.
             return ActivationResult.refused(ActivationOutcome.REFUSED_UNAVAILABLE);
+        }
+        return ActivationResult.ACTED;
+    }
+
+    /**
+     * The release half of one activation (core#159's native-parity
+     * channel): the key-up mirrors the press back through core, and this
+     * ends the hold ARR's {@code startHoldSkill} started - without it a
+     * channelled art ticks until ARR's slotted {@code getMaxHeldTime}
+     * (72000 ticks) and a release-fired art never fires at all (the
+     * owner's "some don't trigger, others never stop").
+     *
+     * <p>The <b>id is the stable key</b>: the bar-to-preset mapping,
+     * slot and mode may all have moved between press and release, so the
+     * held entries are resolved by id and released with each one's OWN
+     * keyNumber and mode - exactly the values the native key-up carries
+     * ({@code handleSkillRelease} matches on them). ARR's body does the
+     * rest, byte-identical to its keybind: {@code RELEASE_SKILL} fires,
+     * {@code onRelease} runs (the payoff the press was waiting for),
+     * held attribute modifiers are removed and the ticking entry drops.
+     * Idempotent per core's contract: unlearned, unregistered or
+     * already-released answer ACTED - a duplicated key-up can never
+     * refuse, and a forgotten skill's orphaned entry self-cleans on
+     * ARR's next hold tick.</p>
+     */
+    public static ActivationResult release(ActivationRequest request, ServerPlayer player) {
+        ResourceLocation id = request.abilityId();
+        var storage = SkillAPI.getSkillsFrom(player);
+        Optional<ManasSkillInstance> maybeInstance = storage.getSkill(id);
+        if (maybeInstance.isEmpty()) {
+            return ActivationResult.ACTED; // nothing learned: nothing to end
+        }
+        ManasSkillInstance instance = maybeInstance.get();
+        // iterate a copy: handleSkillRelease mutates the live list
+        for (var ticking : List.copyOf(storage.getHeldSkills())) {
+            if (id.equals(ticking.getSkill().getRegistryName())) {
+                storage.handleSkillRelease(instance, ticking.getKeyNumber(),
+                        ticking.getMode(), false);
+            }
         }
         return ActivationResult.ACTED;
     }
