@@ -514,6 +514,71 @@ public final class AbilityTensuraGameTests {
     }
 
     /**
+     * The release half end to end (core#159): a press through the full
+     * pipeline starts ARR's hold, and the mirror-image release routed by
+     * core's release path ends it - the held-skills list empties, and a
+     * second release still answers ACTED (the idempotent contract: a
+     * stop with nothing held is never a refusal, so a duplicated key-up
+     * can never strand anything).
+     */
+    @GameTest(template = "empty")
+    public static void releaseEndsTheHoldThePressStarted(GameTestHelper helper) {
+        check(ModList.get().isLoaded("tensura"),
+                "Tensura must be staged for the release test");
+        ServerPlayer player = mockPlayer(helper);
+        String lastStage = "no candidate attempted";
+
+        for (ResourceLocation id : TensuraAbilityCatalog.expectedIds().stream().limit(8)
+                .toList()) {
+            ManasSkill skill = SkillAPI.getSkillRegistry().get(id);
+            if (skill == null) {
+                lastStage = "registry miss: " + id;
+                continue;
+            }
+            SkillAPI.getSkillsFrom(player).updateSkill(skill.createDefaultInstance(), true);
+            if (SkillAPI.getSkillsFrom(player).getSkill(id).isEmpty()) {
+                lastStage = "updateSkill did not register: " + id;
+                continue;
+            }
+            IAbility ability = TensuraStorages.getAbilityFrom(player);
+            if (ability == null) {
+                lastStage = "ability storage missing for a bare player";
+                continue;
+            }
+            ability.setAbilitySlot(ability.getActivePreset(), 0, skill, 0);
+            IExistence existence = TensuraStorages.getExistenceFrom(player);
+            if (existence == null) {
+                lastStage = "existence storage missing";
+                continue;
+            }
+            existence.setMagicule(EnergyHelper.getMaxMagicule(player));
+            existence.setAura(EnergyHelper.getMaxAura(player));
+
+            var press = ActivationRequest.of(id, ActivationSource.DIRECT_SLOT);
+            if (AbilityCore.PIPELINE.run(press, player).outcome() != ActivationOutcome.ACTED) {
+                lastStage = "press refused " + id;
+                continue;
+            }
+            var storage = SkillAPI.getSkillsFrom(player);
+            check(!storage.getHeldSkills().isEmpty(),
+                    "the press must start ARR's hold: " + id);
+
+            var released = AbilityCore.PIPELINE.release(press, player);
+            check(released.outcome() == ActivationOutcome.ACTED,
+                    "release must answer ACTED, got " + released.outcome());
+            check(storage.getHeldSkills().isEmpty(),
+                    "release must end the hold it mirrors: " + id);
+
+            var again = AbilityCore.PIPELINE.release(press, player);
+            check(again.outcome() == ActivationOutcome.ACTED,
+                    "a duplicated release is idempotent, got " + again.outcome());
+            helper.succeed();
+            return;
+        }
+        check(false, "no catalog skill held through full setup; last stage: " + lastStage);
+    }
+
+    /**
      * The on-demand preset mirror (the owner's cast directive): a learned
      * skill that was NEVER equipped into ARR's active preset still casts
      * through the full pipeline - the service equips it into the first

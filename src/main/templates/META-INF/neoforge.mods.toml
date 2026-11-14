@@ -31,10 +31,15 @@ config = "${mod_id}.mixins.json"
 [[dependencies.${mod_id}]]
 modId = "ability_core"
 type = "optional"
-# alpha.01 of the 1.0.2 line is the floor: it is where the mastery
-# contract (REQ-CORE-12, core#137) ships, and this slice's declarations,
-# config-live gain handler and native-keybind award call into it. The
-# pack should run alpha.03+: core#139 (the pipeline's toggle-channel
+# alpha.17 of the 1.1.0 line is the floor: it carries the release
+# channel (ActivationHandler.release + PIPELINE.release, core#159) -
+# this mod's NATIVE handler overrides that method and core must route
+# the hotbar's key-ups into it, so under it releases never arrive and
+# holds run to ARR's max-held-time (the stuck-ability bug). The
+# mastery contract (REQ-CORE-12, core#137) still ships from alpha.01
+# of the 1.0.2 line, where this slice's declarations, config-live gain
+# handler and native-keybind award call into it. The pack should run
+# alpha.03+ of that line: core#139 (the pipeline's toggle-channel
 # mastery skip) is consumed behavior for this mod's togglable arts -
 # below it, pane Enable/Disable spams grants. Everything the old
 # 1.0.1-alpha.02 floor consumed rides along (the slot-scoped mode read,
@@ -43,7 +48,7 @@ type = "optional"
 # loud refusal: the resource series reshaped AbilityDefinition at
 # alpha.34/35 and each break crashed older binaries at RegisterEvent
 # (Tensura RPG, 2026-11-06) - a pre-1.0.2 pack fails the check instead.
-versionRange = "[1.0.2-alpha.03,)"
+versionRange = "[1.1.0-alpha.17,)"
 ordering = "AFTER"
 side = "BOTH"
 
