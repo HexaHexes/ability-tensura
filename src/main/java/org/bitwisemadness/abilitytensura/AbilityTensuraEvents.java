@@ -1,9 +1,18 @@
 package org.bitwisemadness.abilitytensura;
 
+import dev.architectury.event.EventResult;
+import io.github.manasmods.manascore.skill.api.EntityEvents;
+import io.github.manasmods.manascore.skill.api.ManasSkill;
 import io.github.manasmods.manascore.skill.api.SkillAPI;
 import io.github.manasmods.tensura.damage.TensuraDamageSource;
+import io.github.manasmods.tensura.effect.template.TensuraMobEffectInstance;
+import io.github.manasmods.tensura.storage.ability.AbilitySlot;
 import net.minecraft.core.Registry;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
@@ -18,6 +27,7 @@ import org.bitwisemadness.abilitytensura.catalog.BattlewillCatalog;
 import org.bitwisemadness.abilitytensura.catalog.TensuraAbilityCatalog;
 import org.bitwisemadness.abilitytensura.gate.UnlockGate;
 import org.bitwisemadness.abilitytensura.mastery.TensuraMastery;
+import org.bitwisemadness.abilitytensura.mixin.MobEffectInstanceAccessor;
 
 /**
  * The mod-bus listener half of Ability: Tensura. Routing is not spelled
@@ -74,14 +84,16 @@ public final class AbilityTensuraEvents {
      * Registers the unlock gate and the activation handlers after every
      * catalog id is tracked (the registry phase completes before common
      * setup): eligibility rule, availability declarations, the
-     * REMOVE_SKILL listener, one shared NATIVE handler per ability, and
-     * the config-live mastery gain handler.
+     * REMOVE_SKILL listener, one shared NATIVE handler per ability, the
+     * config-live mastery gain handler, and the DURATION axis's
+     * effect-added listener (issue #111, step 5).
      */
     @SubscribeEvent
     public static void onCommonSetup(FMLCommonSetupEvent event) {
         UnlockGate.register();
         TensuraActivation.registerHandlers();
         TensuraMastery.registerGainHandler();
+        registerDurationAxis();
     }
 
     /**
@@ -126,5 +138,75 @@ public final class AbilityTensuraEvents {
         if (multiplier != 1.0 && event.getAmount() > 0.0f) {
             event.setAmount(event.getAmount() * (float) multiplier);
         }
+    }
+
+    /**
+     * The core DURATION axis on ARR's effect funnel (issue #111, step
+     * 5): manascore's own HEAD mixin on {@code LivingEntity.addEffect
+     * (MobEffectInstance, Entity)} - the single funnel every ARR
+     * terminal, manual stamper and vanilla caller reaches - fires this
+     * event with the live instance and its applier before vanilla
+     * weighs the merge, so one listener moves every attributed cast.
+     * The issue's proposed {@code TensuraSkill.addEffect} hook never
+     * could: the shipped bytecode has zero callers of it (the survey
+     * pinned the signature but not its call sites).
+     *
+     * <p>Only ARR attribution scales: the instance's AbilitySlot
+     * names the skill, which is the id every core effect read needs -
+     * vanilla's own unattributed effects have no skill to scale for
+     * and pass untouched. The caster is the applier when it is a
+     * ServerPlayer (the terminals pass the caster through; core effect
+     * reads are server truth, so client contexts pass too), else the
+     * stamped source UUID resolved on the player list (the manual
+     * stampers), and a null caster reads inert ({@code 1.0}). Infinite
+     * and degenerate durations stay ({@code <= 0}, the CAST_TIME
+     * mixin's rule), a 1.0 multiplier writes nothing, and every
+     * unresolved seam passes rather than blocking the add - an effect
+     * read never fails an application.
+     */
+    private static void registerDurationAxis() {
+        EntityEvents.LIVING_EFFECT_ADDED.register((target, applier, changeable) -> {
+            MobEffectInstance instance = changeable.get();
+            if (target.level().isClientSide
+                    || !(instance instanceof TensuraMobEffectInstance attributed)) {
+                return EventResult.pass();
+            }
+            int original = instance.getDuration();
+            if (original <= 0) {
+                return EventResult.pass(); // infinite and degenerate stay
+            }
+            AbilitySlot slot = attributed.tensura$getSourceAbility();
+            ManasSkill skill = slot == null ? null : slot.getSkill();
+            ResourceLocation id = skill == null ? null : skill.getRegistryName();
+            if (id == null) {
+                return EventResult.pass();
+            }
+            double multiplier =
+                    MasteryEffects.durationMultiplier(caster(target, applier, attributed), id);
+            if (multiplier != 1.0) {
+                ((MobEffectInstanceAccessor) instance)
+                        .setDuration((int) Math.round(original * multiplier));
+            }
+            return EventResult.pass();
+        });
+    }
+
+    /**
+     * The caster behind an attributed effect: the applier when it is a
+     * live ServerPlayer (the terminals' common path passes the caster
+     * straight through), else the effect's stamped source resolved on
+     * the player list (MagicAuraSkill stamps the ability itself,
+     * ReverserSkill copies a foreign source). Unresolvable reads null
+     * - core's inert read - never a wrong player's mastery.
+     */
+    private static ServerPlayer caster(LivingEntity target, Entity applier,
+            TensuraMobEffectInstance attributed) {
+        if (applier instanceof ServerPlayer player) {
+            return player;
+        }
+        java.util.UUID source = attributed.tensura$getSource();
+        var server = target.getServer();
+        return source == null || server == null
+                ? null : server.getPlayerList().getPlayer(source);
     }
 }
