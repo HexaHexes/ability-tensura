@@ -11,6 +11,7 @@ import io.github.manasmods.tensura.storage.ability.IAbility;
 import io.github.manasmods.tensura.storage.ep.IExistence;
 import io.github.manasmods.tensura.util.EnergyHelper;
 import net.minecraft.gametest.framework.GameTest;
+import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ClientInformation;
@@ -665,8 +666,9 @@ public final class AbilityTensuraGameTests {
                     "the gain comes from the config-live handler: " + id);
             check(spec.baseGain() == 0.0,
                     "the static base is the handler's fail-closed fallback: " + id);
-            check(spec.triggers().equals(java.util.Set.of(MasteryTrigger.ACTIVATION)),
-                    "activations grant; nothing else is declared: " + id);
+            check(spec.triggers().equals(java.util.Set.of(MasteryTrigger.CUSTOM)),
+                    "only the mastery source (CUSTOM) grants; the pipeline is silent: "
+                            + id);
             boolean isMagic = SkillAPI.getSkillRegistry().get(id)
                     instanceof io.github.manasmods.tensura.ability.magic.Magic;
             check(spec.effects().containsKey(MasteryAxis.COST),
@@ -724,18 +726,16 @@ public final class AbilityTensuraGameTests {
 
     /**
      * The native keybind's award end-to-end (REQ-CORE-12): manascore's own
-     * activation packet drives the real startHoldSkill through the mixin's
-     * redirect - the one entry core's pipeline tail never sees - and the
-     * configured gain lands split between the art's own target and its
-     * definition category. The lambda the mixin targets is pinned first,
-     * so an upstream rename fails here instead of silently dropping awards.
+     * activation packet drives the real startHoldSkill - an entry core's
+     * pipeline tail never sees - and the configured gain lands split
+     * between the art's own target and its definition category. The award
+     * now rides the mastery-source mixin (the source set is identical by
+     * construction), so no packet lambda needs pinning.
      */
     @GameTest(template = "empty")
     public static void nativeKeybindAwardsThroughThePacket(GameTestHelper helper) {
         check(ModList.get().isLoaded("tensura"),
                 "Tensura must be staged for the native-keybind test");
-        check(nativeActivationTargetPresent(),
-                "manascore's activation lambda moved - retarget the mixin");
         ServerPlayer player = mockPlayer(helper);
         var data = MasteryAttachments.data(player);
         check(data.entries().isEmpty(), "a fresh player starts with no mastery XP");
@@ -809,17 +809,47 @@ public final class AbilityTensuraGameTests {
                 + lastStage);
     }
 
-    /** The mixin's target: manascore's queued packet body (a rename must fail here). */
-    private static boolean nativeActivationTargetPresent() {
-        try {
-            Class.forName("io.github.manasmods.manascore.skill.impl.network.c2s"
-                            + ".RequestSkillActivationPacket")
-                    .getDeclaredMethod("lambda$handle$0",
-                            dev.architectury.networking.NetworkManager.PacketContext.class);
-            return true;
-        } catch (ReflectiveOperationException absent) {
-            return false;
+    /**
+     * The source funnel (owner's brief): the same call every ARR source
+     * makes grants core XP only after ARR mastery is maxed - through the
+     * CUSTOM trigger, the config-live handler and the declared share
+     * routing. Pre-max the call moves only ARR's own mastery.
+     */
+    @GameTest(template = "empty")
+    public static void coreXpFlowsOnlyFromMaxedMasterySources(GameTestHelper helper) {
+        var ids = TensuraAbilityCatalog.expectedIds();
+        check(!ids.isEmpty(), "the catalog must stage its arts");
+        var id = ids.iterator().next();
+        var skill = SkillAPI.getSkillRegistry().get(id);
+        if (skill == null) {
+            throw new GameTestAssertException("the art resolves in ARR's registry: " + id);
         }
+        ServerPlayer player = mockPlayer(helper);
+        SkillAPI.getSkillsFrom(player).updateSkill(skill.createDefaultInstance(), true);
+        var instance = SkillAPI.getSkillsFrom(player).getSkill(id).orElse(null);
+        if (instance == null) {
+            throw new GameTestAssertException("updateSkill must register the art: " + id);
+        }
+        if (instance.getMaxMastery() <= 0) {
+            throw new GameTestAssertException("no usable ARR maximum to master for " + id);
+        }
+        var store = MasteryAttachments.data(player);
+        var key = MasteryTarget.ability(id).key();
+
+        // pre-max: the source moves ARR's mastery, core waits (the gate)
+        skill.addMasteryPoint(instance, player, 1.0);
+        check(store.xp(key) == 0.0,
+                "pre-max the source must not grant core XP, got " + store.xp(key));
+
+        // maxed: the same call grants the configured gain, share-routed
+        instance.setMastery(instance.getMaxMastery());
+        skill.addMasteryPoint(instance, player, 1.0);
+        double expected = TensuraServerConfig.SKILL_XP_GAIN.get()
+                * (1.0 - TensuraMastery.CATEGORY_SHARE);
+        check(Math.abs(store.xp(key) - expected) < 1e-9,
+                "post-max the source grants the routed gain, got " + store.xp(key)
+                        + " expected " + expected);
+        helper.succeed();
     }
 
     /** The native packet's server context: same thread, the queue runs inline. */
@@ -974,6 +1004,10 @@ public final class AbilityTensuraGameTests {
     /** The mixins' entry points (a rename fails here). */
     private static boolean effectFunnelsPresent() {
         try {
+            io.github.manasmods.tensura.ability.TensuraSkill.class
+                    .getDeclaredMethod("addMasteryPoint",
+                            ManasSkillInstance.class,
+                            net.minecraft.world.entity.LivingEntity.class, double.class);
             io.github.manasmods.tensura.ability.TensuraSkillInstance.class
                     .getDeclaredMethod("getMagiculeCost",
                             net.minecraft.world.entity.LivingEntity.class, int.class);

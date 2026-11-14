@@ -1,7 +1,9 @@
 package org.bitwisemadness.abilitytensura.mastery;
 
+import io.github.manasmods.manascore.skill.api.ManasSkillInstance;
 import io.github.manasmods.manascore.skill.api.SkillAPI;
 import io.github.manasmods.tensura.ability.magic.Magic;
+import java.util.Set;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import org.bitwisemadness.abilitycore.api.AbilityDefinition;
@@ -10,6 +12,7 @@ import org.bitwisemadness.abilitycore.api.MasteryDeclarations;
 import org.bitwisemadness.abilitycore.api.MasteryGainHandlers;
 import org.bitwisemadness.abilitycore.api.MasterySpec;
 import org.bitwisemadness.abilitycore.api.MasteryTarget;
+import org.bitwisemadness.abilitycore.api.MasteryTrigger;
 import org.bitwisemadness.abilitycore.registry.AbilityRegistries;
 import org.bitwisemadness.abilitytensura.config.TensuraServerConfig;
 import org.bitwisemadness.abilitytensura.gate.UnlockGate;
@@ -31,14 +34,17 @@ import org.jetbrains.annotations.Nullable;
  * share, the gain shape or any effect through core's mastery_spec
  * datapack overlay (core#138); the server config owns the number.</p>
  *
- * <p><b>The award funnels are disjoint by construction</b> (the
- * no-double-award argument): core's pipeline tail grants every bar,
- * wheel and pane activation, so this slice deliberately awards nothing
- * inside {@code TensuraActivation}; the native keybind never enters the
- * pipeline and awards at its own entry (the packet mixin); the toggle
- * channel (MENU + NO_SLOT) never starts a hold and core's pipeline
- * skips it (core#139), so flipping a switch grants nothing anywhere.
- * Mode changes run outside both funnels and grant nothing.</p>
+ * <p><b>The award funnel is the mastery SOURCE itself</b> (owner's
+ * brief): core XP flows only from ARR's own {@code addMasteryPoint} -
+ * the single point every source funnels through (activations, damage,
+ * kills, the admin command) - and only once ARR mastery is maxed. The
+ * source mixin awards under the spec's CUSTOM trigger with the
+ * config-live gain handler and the declared share routing; core's
+ * pipeline ACTIVATION tail is structurally silent (the trigger set
+ * names only CUSTOM), the legacy keybind packet mixin is retired (its
+ * activation reaches the source like every other), toggles never start
+ * a hold and grant nothing, and mode changes run outside and grant
+ * nothing.</p>
  */
 public final class TensuraMastery {
 
@@ -67,7 +73,7 @@ public final class TensuraMastery {
             if (definition == null) {
                 continue;
             }
-            MasterySpec spec = MasterySpec.gained(0.0).withGainHandler(GAIN_HANDLER)
+            MasterySpec composed = MasterySpec.gained(0.0).withGainHandler(GAIN_HANDLER)
                     .withShare(MasteryTarget.category(definition.category()),
                             CATEGORY_SHARE)
                     // the effect side (issue #111): COST rides the mixin'd
@@ -79,9 +85,14 @@ public final class TensuraMastery {
             // the Magic base is the sole getCastingTime holder, and the
             // skill registry is live at this event (the timing gametest)
             if (SkillAPI.getSkillRegistry().get(id) instanceof Magic) {
-                spec = spec.withEffect(MasteryAxis.CAST_TIME);
+                composed = composed.withEffect(MasteryAxis.CAST_TIME);
             }
-            MasteryDeclarations.declare(id, spec);
+            // the award funnel is the mastery SOURCE itself (owner brief):
+            // only CUSTOM grants - the pipeline ACTIVATION tail and the
+            // retired keybind mixin are structurally silent (5-arg = cap)
+            MasteryDeclarations.declare(id, new MasterySpec(composed.baseGain(),
+                    Set.of(MasteryTrigger.CUSTOM), composed.shares(),
+                    composed.gainHandler(), composed.effects()));
         }
     }
 
@@ -116,9 +127,15 @@ public final class TensuraMastery {
             return false;
         }
         var instance = SkillAPI.getSkillsFrom(player).getSkill(id).orElse(null);
-        if (instance == null) {
-            return false;
-        }
+        return instance != null && mastered(instance);
+    }
+
+    /**
+     * The instance-level read of the same rule: at ARR's cap, with a
+     * usable cap. The source-award mixin calls this with the instance it
+     * already holds (no storage re-fetch).
+     */
+    public static boolean mastered(ManasSkillInstance instance) {
         int maxMastery = instance.getMaxMastery();
         return maxMastery > 0 && instance.getMastery() >= maxMastery;
     }
