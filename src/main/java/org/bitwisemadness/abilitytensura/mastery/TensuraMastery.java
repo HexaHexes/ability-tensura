@@ -6,6 +6,7 @@ import io.github.manasmods.tensura.ability.magic.Magic;
 import java.util.Set;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.player.Player;
 import org.bitwisemadness.abilitycore.api.AbilityDefinition;
 import org.bitwisemadness.abilitycore.api.MasteryAxis;
 import org.bitwisemadness.abilitycore.api.MasteryDeclarations;
@@ -138,5 +139,34 @@ public final class TensuraMastery {
     public static boolean mastered(ManasSkillInstance instance) {
         int maxMastery = instance.getMaxMastery();
         return maxMastery > 0 && instance.getMastery() >= maxMastery;
+    }
+
+    /**
+     * The badge bonus state mapping (owner's brief: the shown level
+     * counts Tensura's two mastery bars): the acquisition phase reads
+     * Known (+0), the learned phase +1, and mastery at a usable cap +2.
+     * A cap of 0 (ARR abstention) never counts as mastered.
+     */
+    static int levelBonusForState(double mastery, int maxMastery) {
+        if (mastery < 0.0) {
+            return 0;
+        }
+        return maxMastery > 0 && mastery >= maxMastery ? 2 : 1;
+    }
+
+    /**
+     * The client-side answer hotbar's badge reads (hotbar#233's seam):
+     * the holder's live instance through the pure mapping - no holder or
+     * no skill reads 0, so the badge stays the plain core level.
+     */
+    public static int levelBonusFor(@Nullable Player player, ResourceLocation id) {
+        if (player == null) {
+            return 0;
+        }
+        var instance = SkillAPI.getSkillsFrom(player).getSkill(id).orElse(null);
+        if (instance == null) {
+            return 0;
+        }
+        return levelBonusForState(instance.getMastery(), instance.getMaxMastery());
     }
 }
