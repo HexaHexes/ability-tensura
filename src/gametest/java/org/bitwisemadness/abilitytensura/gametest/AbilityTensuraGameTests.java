@@ -6,6 +6,7 @@ import io.github.manasmods.manascore.skill.api.ManasSkillInstance;
 import io.github.manasmods.manascore.skill.api.SkillAPI;
 import io.github.manasmods.manascore.skill.impl.network.c2s.RequestSkillActivationPacket;
 import io.github.manasmods.tensura.damage.TensuraDamageSource;
+import io.github.manasmods.tensura.effect.template.TensuraMobEffectInstance;
 import io.github.manasmods.tensura.storage.TensuraStorages;
 import io.github.manasmods.tensura.storage.ability.IAbility;
 import io.github.manasmods.tensura.storage.ep.IExistence;
@@ -17,6 +18,8 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ClientInformation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
 import net.neoforged.fml.ModList;
 import net.neoforged.neoforge.common.damagesource.DamageContainer;
 import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
@@ -643,9 +646,10 @@ public final class AbilityTensuraGameTests {
      * tracked art declares mastery with the config-live gain handler, the
      * ACTIVATION trigger, no static base, and exactly one share - to the
      * art's own definition category. The COST axis ships with all of them
-     * and CAST_TIME with the Magic ids only (issue #111 steps 1-3): the
-     * mixin'd funnels are the caster-aware seams those axes read through,
-     * and nothing else applies.
+     * and CAST_TIME with the Magic ids only (issue #111 steps 1-3), and
+     * DURATION with every art too (step 5: the attributed-effect funnel
+     * is runtime-gated, so no static predicate beats "declared, never
+     * derived" - POWER's own shape).
      */
     @GameTest(template = "empty")
     public static void skillMasteryDeclarationsFollowTheCatalog(GameTestHelper helper) {
@@ -675,10 +679,12 @@ public final class AbilityTensuraGameTests {
                     "every art carries the COST axis: " + id);
             check(spec.effects().containsKey(MasteryAxis.POWER),
                     "every art carries the POWER axis: " + id);
+            check(spec.effects().containsKey(MasteryAxis.DURATION),
+                    "every art carries the DURATION axis: " + id);
             check(spec.effects().containsKey(MasteryAxis.CAST_TIME) == isMagic,
                     "CAST_TIME only where a cast time exists: " + id);
-            check(spec.effects().size() == (isMagic ? 3 : 2),
-                    "nothing beyond COST+POWER (+ CAST_TIME for magic): " + id);
+            check(spec.effects().size() == (isMagic ? 4 : 3),
+                    "nothing beyond COST+POWER+DURATION (+ CAST_TIME for magic): " + id);
             check(spec.shares().size() == 1, "exactly one share per art: " + id);
             var share = spec.shares().iterator().next();
             var definition = registry.get(id);
@@ -937,15 +943,16 @@ public final class AbilityTensuraGameTests {
     }
 
     /**
-     * The effect mixins' upstream shape (issue #111, steps 2-3): all three
-     * funnel methods must keep their exact signatures or an injection
-     * silently stops scaling, and every staged spec must carry the COST
-     * axis the cost mixin reads (undeclared = core answers 1.0 = inert).
+     * The effect axes' upstream shape (issue #111, steps 2-5): every
+     * funnel method and event seam must keep its exact signature or an
+     * injection or the DURATION listener silently stops scaling, and
+     * every staged spec must carry the COST axis the cost mixin reads
+     * (undeclared = core answers 1.0 = inert).
      */
     @GameTest(template = "empty")
     public static void masteryCostAxisPinsItsUpstream(GameTestHelper helper) {
         check(effectFunnelsPresent(),
-                "ARR renamed a funnel an effect MasteryCost/MasteryCastTime mixin injects");
+                "an upstream seam steps 2-5 scale through was renamed");
         TensuraMastery.declareAll();
         var ids = TensuraAbilityCatalog.expectedIds();
         check(!ids.isEmpty(), "the catalog must stage its arts");
@@ -1001,7 +1008,76 @@ public final class AbilityTensuraGameTests {
         helper.succeed();
     }
 
-    /** The mixins' entry points (a rename fails here). */
+    /**
+     * The DURATION axis scales attributed effect instances (issue #111,
+     * step 5): ARR stamps its effect terminals with the source ability,
+     * so manascore's add-effect event resolves the exact skill and
+     * core's reader answers for the ServerPlayer applier - the instance
+     * lands with the rounded product of base duration and multiplier.
+     * An instance without attribution has no skill id to scale for and
+     * stays at its base duration, and the expected multiplier comes
+     * from core's own reader, so the fixture is table-agnostic (the
+     * POWER test's shape; mockPlayer is never in the player list, so
+     * this also pins the applier-first caster rule).
+     */
+    @GameTest(template = "empty")
+    public static void durationAxisScalesAttributedEffectInstances(GameTestHelper helper) {
+        var ids = TensuraAbilityCatalog.expectedIds();
+        check(!ids.isEmpty(), "the catalog must stage its arts");
+        var id = ids.iterator().next();
+        TensuraMastery.declareAll();
+        ServerPlayer player = mockPlayer(helper);
+        // a pool any sane curve/table prices above level 0 (the pinned
+        // core predates xpForLevel, so the fixture stays pin-agnostic)
+        MasteryAttachments.data(player)
+                .addXp(MasteryTarget.ability(id).key(), 1_000_000.0);
+        var skill = SkillAPI.getSkillRegistry().get(id);
+        if (skill == null) {
+            throw new GameTestAssertException(
+                    "the art resolves in ARR's registry: " + id);
+        }
+        double expected = MasteryEffects.durationMultiplier(player, id);
+        check(expected > 1.0,
+                "the fixture pool must move the DURATION multiplier, got " + expected);
+
+        // the attribution ride exactly as ARR's terminals stamp it
+        var attributed = new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 100, 0);
+        stampAttribution(attributed, skill, player);
+        player.addEffect(attributed, player);
+        long scaled = Math.round(100 * expected);
+        check(attributed.getDuration() == scaled,
+                "an attributed instance must scale by the DURATION multiplier, got "
+                        + attributed.getDuration() + " expected " + scaled);
+
+        // vanilla's own effects carry no skill id - they never scale
+        var plain = new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 100, 0);
+        player.addEffect(plain, player);
+        check(plain.getDuration() == 100,
+                "an unattributed instance must stay at its base duration, got "
+                        + plain.getDuration());
+        helper.succeed();
+    }
+
+    /**
+     * Stamps ARR attribution exactly as its effect terminals do - the
+     * source ability names the skill, the source UUID the caster. The
+     * parameter's static type is what keeps the duck-interface read
+     * honest: SpotBugs tracks {@code new MobEffectInstance(...)} as a
+     * precise type (the runtime mixin merge is invisible to it) and
+     * would read a direct cast or instanceof on the caller's local as
+     * impossible.
+     */
+    private static void stampAttribution(MobEffectInstance instance, ManasSkill skill,
+            ServerPlayer player) {
+        if (!(instance instanceof TensuraMobEffectInstance ride)) {
+            throw new GameTestAssertException(
+                    "ARR's mixin must put attribution on every effect instance");
+        }
+        ride.tensura$setSourceAbility(skill, 1);
+        ride.tensura$setSource(player.getUUID());
+    }
+
+    /** The funnels' entry points and seams (a rename fails here). */
     private static boolean effectFunnelsPresent() {
         try {
             io.github.manasmods.tensura.ability.TensuraSkill.class
@@ -1028,6 +1104,24 @@ public final class AbilityTensuraGameTests {
                             ManasSkillInstance.class,
                             net.minecraft.world.entity.LivingEntity.class,
                             int.class, boolean.class);
+            // step 5's seams: manascore's event rides vanilla's 2-arg
+            // addEffect, the duration field is the accessor's write path,
+            // and the event + id pins name the reader's own contract
+            net.minecraft.world.entity.LivingEntity.class
+                    .getDeclaredMethod("addEffect",
+                            net.minecraft.world.effect.MobEffectInstance.class,
+                            net.minecraft.world.entity.Entity.class);
+            net.minecraft.world.effect.MobEffectInstance.class
+                    .getDeclaredField("duration");
+            io.github.manasmods.manascore.skill.api.EntityEvents.class
+                    .getDeclaredField("LIVING_EFFECT_ADDED");
+            io.github.manasmods.manascore.skill.api.EntityEvents.LivingEffectAddedEvent.class
+                    .getDeclaredMethod("effectAdd",
+                            net.minecraft.world.entity.LivingEntity.class,
+                            net.minecraft.world.entity.Entity.class,
+                            io.github.manasmods.manascore.network.api.util.Changeable.class);
+            io.github.manasmods.manascore.skill.api.ManasSkill.class
+                    .getDeclaredMethod("getRegistryName");
             return true;
         } catch (ReflectiveOperationException absent) {
             return false;
