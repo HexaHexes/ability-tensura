@@ -10,11 +10,13 @@ import net.minecraft.world.entity.player.Player;
 import org.bitwisemadness.abilitycore.api.AbilityDefinition;
 import org.bitwisemadness.abilitycore.api.MasteryAxis;
 import org.bitwisemadness.abilitycore.api.MasteryDeclarations;
+import org.bitwisemadness.abilitycore.api.MasteryExclusions;
 import org.bitwisemadness.abilitycore.api.MasteryGainHandlers;
 import org.bitwisemadness.abilitycore.api.MasterySpec;
 import org.bitwisemadness.abilitycore.api.MasteryTarget;
 import org.bitwisemadness.abilitycore.api.MasteryTrigger;
 import org.bitwisemadness.abilitycore.registry.AbilityRegistries;
+import org.bitwisemadness.abilitytensura.catalog.TensuraAbilityCatalog;
 import org.bitwisemadness.abilitytensura.config.TensuraServerConfig;
 import org.bitwisemadness.abilitytensura.gate.UnlockGate;
 import org.jetbrains.annotations.Nullable;
@@ -96,6 +98,20 @@ public final class TensuraMastery {
                     Set.of(MasteryTrigger.CUSTOM), composed.shares(),
                     composed.gainHandler(), composed.effects()));
         }
+    }
+
+    /**
+     * Registers the domain's default mastery exclusions (tensura#121
+     * item 3): ARR's {@code resistance_skills} tag - every resistance
+     * and nullification - must not feed core mastery (their passive
+     * shapes would otherwise declare COST/POWER/DURATION like any art).
+     * Core merges these declarations into every blacklist read, so the
+     * operator's {@code mastery.blacklist} config stays additive on
+     * top. Called at common setup; idempotent like every declaration.
+     */
+    public static void registerExclusions() {
+        MasteryExclusions.declareAll(
+                TensuraAbilityCatalog.idsIn("resistance_skills"));
     }
 
     /**

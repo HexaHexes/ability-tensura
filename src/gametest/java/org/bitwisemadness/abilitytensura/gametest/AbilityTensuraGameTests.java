@@ -44,6 +44,7 @@ import org.bitwisemadness.abilitycore.api.ModeChangeHandlers;
 import org.bitwisemadness.abilitycore.api.ModeChangeRequest;
 import org.bitwisemadness.abilitycore.api.ModeOwners;
 import org.bitwisemadness.abilitycore.api.VisibilityHandlers;
+import org.bitwisemadness.abilitycore.config.CoreConfig;
 import org.bitwisemadness.abilitycore.discovery.AbilityDiscovery;
 import org.bitwisemadness.abilitycore.mastery.MasteryAttachments;
 import org.bitwisemadness.abilityhotbar.state.BarStateAttachments;
@@ -1120,6 +1121,40 @@ public final class AbilityTensuraGameTests {
         check(plain.getDuration() == 100,
                 "an unattributed instance must stay at its base duration, got "
                         + plain.getDuration());
+        helper.succeed();
+    }
+
+    /**
+     * The domain-default mastery exclusions (tensura#121 item 3): ARR's
+     * resistance_skills tag - every resistance and nullification - is
+     * declared out of core mastery at setup, an ordinary cataloged art
+     * stays in, and the tag's exact shape (22 + 22) is pinned so an
+     * upstream tag edit re-runs this review instead of silently
+     * shrinking the set.
+     */
+    @GameTest(template = "empty")
+    public static void resistanceArtsAreExcludedFromCoreMastery(GameTestHelper helper) {
+        check(ModList.get().isLoaded("tensura"),
+                "Tensura must be staged for the exclusion test");
+        var excluded = TensuraAbilityCatalog.idsIn("resistance_skills");
+        check(excluded.size() == 44,
+                "ARR's tag must list 22 resistances + 22 nullifications, got "
+                        + excluded.size());
+        ResourceLocation resistance = excluded.stream()
+                .filter(id -> id.getPath().endsWith("_resistance")).findFirst().orElse(null);
+        ResourceLocation nullification = excluded.stream()
+                .filter(id -> id.getPath().endsWith("_nullification")).findFirst().orElse(null);
+        check(resistance != null && nullification != null,
+                "the tag must carry both shapes");
+        check(CoreConfig.masteryBlacklisted(resistance),
+                "a resistance must be excluded from core mastery: " + resistance);
+        check(CoreConfig.masteryBlacklisted(nullification),
+                "a nullification must be excluded from core mastery: " + nullification);
+        ResourceLocation ordinary = TensuraAbilityCatalog.expectedIds().stream()
+                .filter(id -> !excluded.contains(id)).findFirst().orElse(null);
+        check(ordinary != null, "the catalog must carry a non-resistance art");
+        check(!CoreConfig.masteryBlacklisted(ordinary),
+                "an ordinary art must not be excluded: " + ordinary);
         helper.succeed();
     }
 
