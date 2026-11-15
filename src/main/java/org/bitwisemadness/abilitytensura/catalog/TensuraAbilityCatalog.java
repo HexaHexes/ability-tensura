@@ -149,6 +149,30 @@ public final class TensuraAbilityCatalog {
         return out;
     }
 
+    /**
+     * Every id ARR's tag lists for one category (tensura#121's
+     * exclusion source: {@code resistance_skills} is the 22 resistances
+     * plus 21 nullifications) - freshly read like {@link #expectedIds}.
+     * Empty when Tensura is absent or the tag names no known category
+     * (an unknown tag never throws into setup).
+     */
+    public static Set<ResourceLocation> idsIn(String categoryTag) {
+        ModFile tensura = tensuraModFile();
+        if (tensura == null) {
+            return Set.of();
+        }
+        for (Category category : CATEGORIES) {
+            if (category.tag().equals(categoryTag)) {
+                Set<ResourceLocation> out = new LinkedHashSet<>();
+                for (String artPath : readTag(tensura, category)) {
+                    out.add(ResourceLocation.fromNamespaceAndPath(ID_NAMESPACE, artPath));
+                }
+                return out;
+            }
+        }
+        return Set.of();
+    }
+
     /** ARR's mod file, or null when Tensura is not installed. */
     private static ModFile tensuraModFile() {
         var info = ModList.get().getModFileById(ID_NAMESPACE);

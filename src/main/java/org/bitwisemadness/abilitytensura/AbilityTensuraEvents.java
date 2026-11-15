@@ -93,6 +93,7 @@ public final class AbilityTensuraEvents {
         UnlockGate.register();
         TensuraActivation.registerHandlers();
         TensuraMastery.registerGainHandler();
+        TensuraMastery.registerExclusions();
         registerDurationAxis();
     }
 
