@@ -6,8 +6,8 @@ and pulled in verbatim - **never hand-edit it.** Everything in this file is this
 repo's own and is edited freely; keep it aligned with the org rules rather than
 restating them.
 
-**Repo:** `HexaHexes/ability-tensura` - **Mod ID:** `ability_tensura` - **Branch:** `main`
-**Platform:** Minecraft 1.21.1 / NeoForge 21.1.259 / JDK 21 - **Jar:** `build/libs/ability_tensura-<version>.jar`
+**Repo:** `HexaHexes/ability-tensura` · **Mod ID:** `ability_tensura` · **Branch:** `neoforge-1.21.1` (the loader line; this is the default branch - no `main`)
+**Platform:** Minecraft 1.21.1 / NeoForge 21.1.259 / JDK 21 · **Jar:** `build/libs/ability_tensura-neoforge-1.21.1-<version>.jar`
 
 **Scope (owner directive, 2026-11-06; #45):** the single integration layer
 between *any and all* Tensura: Reincarnated ability systems - **battlewills,
