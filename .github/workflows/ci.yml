@@ -310,7 +310,7 @@ jobs:
           # `gh workflow run ci.yml --ref <branch>`) there is no pull_request
           # event, so BASE falls back to the default branch NAME - and that
           # checkout only materializes the dispatched ref. Git's revision DWIM
-          # does not walk to refs/remotes/origin/<name>, so `git diff main ...`
+          # does not walk to refs/remotes/origin/<name>, so `git diff neoforge-1.21.1 ...`
           # dies with "ambiguous argument" (exit 128). Compare against the
           # remote-tracking ref instead; fetch it if even that is missing.
           if ! printf '%s' "$BASE" | grep -Eq '^[0-9a-f]{40}$'; then
@@ -388,7 +388,12 @@ jobs:
             exit 0
           fi
 
-          BASELINE=$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)
+          # Both stable-tag shapes through one script (issue #109): the tag
+          # feeds git log, the bare version the semver math below - #v would
+          # not strip a loader-line tag.
+          BASELINE=""
+          BASELINE_VERSION=""
+          read -r BASELINE BASELINE_VERSION < <(bash .github/scripts/stable-baseline.sh) || true
 
           if [ -z "$BASELINE" ]; then
             echo "No stable tag exists yet. Nothing to be compatible with. OK."
@@ -406,7 +411,7 @@ jobs:
 
           echo "breaking PRs since $BASELINE: $BREAKING"
 
-          OLD_BASE="${BASELINE#v}"
+          OLD_BASE="$BASELINE_VERSION"
           MAJOR_OLD=$(echo "$OLD_BASE" | cut -d. -f1)
           MINOR_OLD=$(echo "$OLD_BASE" | cut -d. -f2)
           MAJOR_NEW=$(echo "$NEW_VERSION" | cut -d. -f1)
